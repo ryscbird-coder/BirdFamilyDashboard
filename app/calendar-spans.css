@@ -1,0 +1,23 @@
+/* Keep the existing day cells; use shared columns for continuous multi-day bars. */
+.calendar-grid.calendar-span-grid{display:block;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#b8cdc1 transparent}
+.calendar-span-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));position:relative;isolation:isolate}
+.calendar-span-grid .calendar-span-week .calendar-span-day{padding:0;min-height:0;z-index:0}
+.calendar-span-header,.calendar-span-events{min-width:0;position:relative;z-index:1;padding:10px 9px 0}
+.calendar-span-header .calendar-day-label{margin-bottom:6px}
+.calendar-span-header.outside,.calendar-span-events.outside{opacity:.65}
+.calendar-span-events{padding:4px 9px 10px}
+.calendar-span-event{position:relative;z-index:2;display:flex;align-items:center;gap:6px;min-width:0;min-height:44px;margin:0 4px 4px;padding:7px 9px;border:1px solid #bad0c2;border-left:3px solid var(--event-colour,#78d3ef);border-radius:7px;background:#e9f1e8;background:color-mix(in srgb,var(--event-colour,#78d3ef) 24%,#fffefa);color:#294f55;text-align:left;font-size:11px;line-height:1.4;overflow:hidden}
+.calendar-span-event:hover{filter:brightness(.97);box-shadow:0 1px 6px #547b6c22}
+.calendar-span-event:focus-visible{z-index:4;outline:2px solid #286c70;outline-offset:-2px}
+.calendar-span-event.continues-before{border-top-left-radius:0;border-bottom-left-radius:0;border-left-width:1px;margin-left:0}
+.calendar-span-event.continues-after{border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:1px;margin-right:0}
+.calendar-span-event.tentative{border-top-style:dashed;border-bottom-style:dashed}
+.calendar-span-title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
+.calendar-span-start{font-size:10px;font-weight:450;color:#4d716f}
+.calendar-span-source{flex:none;font-size:8px;color:#557b7f;padding:2px 4px;border:1px solid #aec5ba80;border-radius:4px;background:#ffffff66}
+.calendar-span-continuation{flex:none;font-size:18px;line-height:1;color:#537768}
+.month-grid .calendar-span-events{padding-left:6px;padding-right:6px}
+.month-grid .calendar-span-header{padding-left:6px;padding-right:6px}
+.month-grid .calendar-span-event{font-size:10px;padding-left:7px;padding-right:7px}
+@media(max-width:1000px){.calendar-span-header,.calendar-span-events{padding-left:6px;padding-right:6px}.calendar-span-event{font-size:10px}}
+@media(max-width:700px){.calendar-span-weeks{min-width:735px}.month-grid .calendar-span-weeks{min-width:490px}.calendar-span-event{font-size:11px}.month-grid .calendar-span-event{font-size:10px}.calendar-span-source{display:none}.calendar-span-header{padding-top:9px}}

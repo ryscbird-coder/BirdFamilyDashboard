@@ -5,6 +5,9 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 export interface ICloudCalendar { id: string; displayName: string; color?: string; }
 export interface ICloudEvent {
   providerId: string; uid: string; calendarId: string; calendarTitle: string;
+  /** Combine with an exact or explicitly linked calendar identity; never dedupe on this key alone. */
+  occurrenceKey: string;
+  providerSequence?: number; providerModifiedAt?: string;
   title: string; startAt: string; endAt: string; allDay: boolean;
   status: 'confirmed' | 'tentative'; location?: string; notes?: string; color?: string;
 }
@@ -132,9 +135,26 @@ function epoch(t: CalTime, event: CalEvent, property = 'dtstart'): number {
 }
 function serialTime(t: CalTime, event: CalEvent, property = 'dtstart'): string { return t.isDate ? `${String(t.year).padStart(4, '0')}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : new Date(epoch(t, event, property)).toISOString(); }
 async function providerId(calendar: string, uid: string, identity: string): Promise<string> { const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(calendar + '\u001f' + uid + '\u001f' + identity)); return 'icloud_' + [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+async function occurrenceKey(uid: string, identity: string): Promise<string> { const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(uid + '\u001f' + identity)); return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+function providerRevision(event: CalEvent): { providerSequence?: number; providerModifiedAt?: string } {
+  const metadata: { providerSequence?: number; providerModifiedAt?: string } = {};
+  const rawSequence = event.component.getFirstPropertyValue('sequence');
+  if (event.component.hasProperty('sequence') && typeof rawSequence === 'number' && Number.isSafeInteger(rawSequence) && rawSequence >= 0 && rawSequence <= 2_147_483_647) metadata.providerSequence = rawSequence;
+  const modified = event.component.getFirstPropertyValue('last-modified');
+  const modifiedProperty = event.component.getFirstProperty('last-modified');
+  // LAST-MODIFIED is UTC in RFC 5545. Accept an explicit, resolvable TZID as well;
+  // never infer a floating revision timestamp from the event's DTSTART timezone.
+  if (modified instanceof ICAL.Time && !modified.isDate && (modified.zone?.tzid === 'UTC' || modifiedProperty?.getParameter('tzid'))) {
+    try { const value = epoch(modified, event, 'last-modified'); if (Number.isFinite(value)) metadata.providerModifiedAt = new Date(value).toISOString(); } catch { /* Unusable optional revision metadata does not invalidate otherwise valid events. */ }
+  }
+  return metadata;
+}
+
 
 /** A parser error or expansion cap fails the complete sync, so callers must retain previous events. */
 interface ExpansionBudget { count: number; deadline: number; }
+interface OriginalOccurrence { time: CalTime; event: CalEvent; property: 'dtstart' | 'recurrence-id'; }
+function originalOccurrenceIdentity(original: OriginalOccurrence): string { return serialTime(original.time, original.event, original.property); }
 export async function parseCalendarData(ics: string, calendar: ICloudCalendar, windowStart: string, windowEnd: string, sharedBudget?: ExpansionBudget): Promise<ICloudEvent[]> {
   if (!/^BEGIN:VCALENDAR(?:\r?\n)[\s\S]*(?:\r?\n)END:VCALENDAR\s*$/i.test(ics.trim())) throw new ICloudError('invalid_calendar_data', 'Apple returned incomplete calendar data. Previous events have been retained.');
   if (ics.length > MAX_BYTES) throw new ICloudError('calendar_limit', 'A calendar event is too large for this import.');
@@ -145,12 +165,12 @@ export async function parseCalendarData(ics: string, calendar: ICloudCalendar, w
   const groups = new Map<string, CalComponent[]>();
   for (const c of events) { const uid = String(c.getFirstPropertyValue('uid') || ''); if (!uid || uid.length > 1000) throw new ICloudError('invalid_calendar_data', 'A calendar event is missing its stable identifier.'); const a = groups.get(uid) || []; a.push(c); groups.set(uid, a); }
   const output = new Map<string, ICloudEvent>(); let expansions = 0; const budget = sharedBudget ?? { count: 0, deadline: Date.now() + 45_000 };
-  const emit = async (event: CalEvent, start: CalTime, end: CalTime, identity: string) => {
+  const emit = async (event: CalEvent, start: CalTime, end: CalTime, identity: string, original?: OriginalOccurrence) => {
     if (String(event.component.getFirstPropertyValue('status') || '').toUpperCase() === 'CANCELLED') return;
     const startEpoch = epoch(start, event), endEpoch = epoch(end, event, 'dtend'); if (!Number.isFinite(startEpoch) || !Number.isFinite(endEpoch) || endEpoch < startEpoch) throw new ICloudError('invalid_calendar_data', 'A calendar event has invalid dates.');
     if (startEpoch >= to || (endEpoch <= from && startEpoch !== endEpoch) || (startEpoch === endEpoch && startEpoch < from)) return;
     const id = await providerId(calendar.id, event.uid, identity);
-    output.set(id, { providerId: id, uid: text(event.uid, 1000), calendarId: calendar.id, calendarTitle: calendar.displayName, title: text(event.summary || '(Untitled event)', 200), startAt: serialTime(start, event), endAt: serialTime(end, event, 'dtend'), allDay: start.isDate, status: String(event.component.getFirstPropertyValue('status')).toUpperCase() === 'TENTATIVE' ? 'tentative' : 'confirmed', ...(event.location ? { location: text(event.location, 500) } : {}), ...(event.description ? { notes: text(event.description, 4000) } : {}), ...(calendar.color ? { color: calendar.color } : {}) });
+    output.set(id, { ...providerRevision(event), providerId: id, occurrenceKey: await occurrenceKey(event.uid, original ? originalOccurrenceIdentity(original) : 'single'), uid: text(event.uid, 1000), calendarId: calendar.id, calendarTitle: calendar.displayName, title: text(event.summary || '(Untitled event)', 200), startAt: serialTime(start, event), endAt: serialTime(end, event, 'dtend'), allDay: start.isDate, status: String(event.component.getFirstPropertyValue('status')).toUpperCase() === 'TENTATIVE' ? 'tentative' : 'confirmed', ...(event.location ? { location: text(event.location, 500) } : {}), ...(event.description ? { notes: text(event.description, 4000) } : {}), ...(calendar.color ? { color: calendar.color } : {}) });
     if (output.size > MAX_EVENTS) throw new ICloudError('calendar_limit', 'Too many calendar occurrences were returned. Select fewer calendars.');
   };
   try {
@@ -167,8 +187,11 @@ export async function parseCalendarData(ics: string, calendar: ICloudCalendar, w
         }
         return exception;
       });
-      if (!master) { for (const exception of exceptions) await emit(exception, exception.startDate, exception.endDate, exception.recurrenceId.toString()); continue; }
+      if (!master) { for (const exception of exceptions) await emit(exception, exception.startDate, exception.endDate, exception.recurrenceId.toString(), { time: exception.recurrenceId, event: exception, property: 'recurrence-id' }); continue; }
       const event = new ICAL.Event(master, { strictExceptions: true, exceptions });
+      // ICAL.js matches exceptions by wall-time serialization. Match exact instances by
+      // their original instant too, so equivalent UTC/TZID encodings do not leave the old instance visible.
+      const exactExceptionInstants = new Set(exceptions.map(exception => originalOccurrenceIdentity({ time: exception.recurrenceId, event: exception, property: 'recurrence-id' })));
       if (String(master.getFirstPropertyValue('status')).toUpperCase() === 'CANCELLED') continue;
       if (!event.isRecurring()) await emit(event, event.startDate, event.endDate, 'single');
       else {
@@ -183,10 +206,12 @@ export async function parseCalendarData(ics: string, calendar: ICloudCalendar, w
           const rough = Date.UTC(occurrence.year, occurrence.month - 1, occurrence.day, occurrence.hour || 0, occurrence.minute || 0, occurrence.second || 0);
           if (rough >= to + rangeShift + 172_800_000) break;
           if (rough < from - maxDuration - rangeShift - 172_800_000) continue;
-          const detail = event.getOccurrenceDetails(occurrence); await emit(detail.item, detail.startDate, detail.endDate, occurrence.toString());
+          const original = { time: occurrence, event, property: 'dtstart' as const };
+          if (exactExceptionInstants.has(originalOccurrenceIdentity(original))) continue;
+          const detail = event.getOccurrenceDetails(occurrence); await emit(detail.item, detail.startDate, detail.endDate, occurrence.toString(), original);
         }
         // A moved instance may enter the window from an original occurrence outside it.
-        for (const exception of exceptions) await emit(exception, exception.startDate, exception.endDate, exception.recurrenceId.toString());
+        for (const exception of exceptions) await emit(exception, exception.startDate, exception.endDate, exception.recurrenceId.toString(), { time: exception.recurrenceId, event: exception, property: 'recurrence-id' });
       }
     }
   } catch (error) { if (error instanceof ICloudError) throw error; throw new ICloudError('invalid_calendar_data', 'A recurring calendar event could not be read safely. Previous events have been retained.'); }
