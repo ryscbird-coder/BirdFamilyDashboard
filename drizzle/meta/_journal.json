@@ -15,6 +15,20 @@
       "when": 1793275410917,
       "tag": "0001_funny_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793277315614,
+      "tag": "0002_free_mongoose",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793277606070,
+      "tag": "0003_thin_pepper_potts",
+      "breakpoints": true
     }
   ]
 }
