@@ -102,3 +102,11 @@ Migration 0004 adds account, calendar-link, contribution and optimistic revision
 After legacy adoption, use forward fixes with this account model. The older v4 server reads only the removed singleton and cannot use the new account tables; rolling back code alone would hide the saved connection. Credentials remain encrypted in the new table. Any rollback needs a compatible data adapter rather than a blind source-version rollback.
 
 The original import predates stored UID/recurrence identities. Its records and selections are preserved during upgrade. The original owner should sync once to establish those identities before another account publishes shared events; until then the second sync returns a clear refresh-required state rather than creating duplicates. This does not create or reschedule a background task. Automatic calendar refresh remains unconfigured.
+
+## Cookbook links and recipe imports
+
+Recipe detail uses numbered, tickable steps beside portion-scaled ingredients. Direct shopping imports retain the existing server-side idempotency and cupboard exclusions. `yieldUnit: batches` supports clippings that do not specify a serving yield without inventing a person count. Pack weights that are absent remain explicit pack units. Source photos and dish images are not stored.
+
+`POST /api/recipes/import-link` reads bounded JSON-LD recipe text from allowlisted HTTPS BBC Good Food/Good Food, HelloFresh and Gousto pages, with checked redirects and a timeout. It returns a review draft; it never silently saves or imports arbitrary URLs. Imported recipes retain source attribution. Publisher blocking and pages without recipe metadata produce a manual-entry fallback. Fractional quantities are parsed for scaling, and unrecognised amounts remain review text.
+
+Optional secret `HUB_RECIPE_IMPORT_JSON` accepts a one-time owner-authorized `{batchId, recipes: [{id, data}]}` envelope. It uses the existing transactional bootstrap marker and insert-only IDs, never overwrites household edits, and keeps private recipe content outside Git.
