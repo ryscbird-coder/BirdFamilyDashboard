@@ -1,0 +1,14 @@
+import React from 'react';
+import {headers} from 'next/headers';
+import {env} from 'cloudflare:workers';
+import {requireChatGPTUser} from '../chatgpt-auth';
+import {handleApi} from '../../server/api';
+export const dynamic='force-dynamic';
+export default async function Admin(){
+ await requireChatGPTUser('/admin');
+ const identity=await headers();
+ const response=await handleApi(new Request('https://hub.internal/api/admin',{headers:identity}),env as never);
+ if(!response.ok)return <main style={{maxWidth:800,margin:'10vh auto',padding:24}}><a href="/">← Family Hub</a><h1>Owner access required</h1><p>This space is protected by a separate server permission. Household membership does not grant access to business results.</p></main>;
+ const data=await response.json() as {results:Array<Record<string,string>>};
+ return <main style={{maxWidth:1000,margin:'5vh auto',padding:24}}><a className="button ghost" href="/">← Back to Family Hub</a><p className="eyebrow" style={{marginTop:40}}>OWNER ONLY · ADMIN</p><h1>Ryan’s briefing room</h1><p className="subtle">Existing specialist workflows remain separate. Their schedules and paused states are preserved. Results here carry their own source and observation dates.</p><section className="panel" style={{marginTop:24}}><h2>Verified workflow results</h2>{!data.results.length&&<p>No verified results have been received yet. The authenticated writer is available through this Site’s private plugin. Installation and a real write/readback must be verified before calling unattended updates operational.</p>}{data.results.map(result=><article key={result.id} style={{borderTop:'1px solid #284153',padding:'24px 0'}}><p className="eyebrow">{result.workflow} · {result.runStatus}</p><h3>{result.summary}</h3>{result.action&&<p>{result.action}</p>}<p className="subtle">{result.owner&&`Owner: ${result.owner} · `}Observed {new Date(result.observedAt).toLocaleString('en-GB',{timeZone:'Europe/London'})}{result.lastSuccess&&` · Last successful result ${new Date(result.lastSuccess).toLocaleString('en-GB',{timeZone:'Europe/London'})}`}</p>{result.sourceLink&&<a href={result.sourceLink} target="_blank" rel="noreferrer">Original source ↗</a>}</article>)}</section><section className="panel" style={{marginTop:24}}><h2>Connection desk</h2><p>iCloud calendars: hosted read connection awaiting configuration. Apple Calendar remains the intended source of truth. Hub calendar entries are separate manual records.</p><p>Weekly Ryan Dashboard: paused. Email organisation and transport: existing local workflows have not been connected. No replacement tasks have been created.</p><p>Family sharing requires Gabriella’s confirmed sign-in email, a private Sites visitor grant and a household member grant. No email has been guessed.</p><p>Wall mode loads household data only. A tablet signed into your owner account can still open this protected route; wall layout is not a restricted device session.</p></section></main>;
+}

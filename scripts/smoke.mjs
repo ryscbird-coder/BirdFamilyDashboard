@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+const base=process.argv[2]||'http://127.0.0.1:8787';if(!['127.0.0.1','localhost'].includes(new URL(base).hostname))throw Error('Synthetic smoke checks run against loopback only.');
+const identity={'oai-authenticated-user-id':'local-owner','oai-authenticated-user-email':'owner@sites.test'};
+const call=async(path,method='GET',data,extra={})=>{const r=await fetch(base+path,{method,headers:{...identity,'Content-Type':'application/json',Origin:base,...extra},body:data===undefined?undefined:JSON.stringify(data)});const type=r.headers.get('content-type');return {status:r.status,body:type?.includes('json')?await r.json():await r.text()};};
+assert.equal((await call('/api/state','GET',undefined,{'oai-authenticated-user-id':''})).status,401);
+assert.equal((await call('/')).status,200);assert.equal((await call('/admin')).status,200);
+const item=(await call('/api/items','POST',{kind:'shopping',data:{title:'Synthetic smoke check',listName:'QA',done:false}},{'Idempotency-Key':crypto.randomUUID()})).body.record;assert.ok(item?.id);
+assert.ok((await call('/api/state')).body.records.some(x=>x.id===item.id));
+assert.equal((await call('/api/items/'+item.id,'PATCH',{version:1,data:{done:true}})).body.record.data.done,true);
+assert.equal((await call('/api/items/'+item.id,'PATCH',{version:1,data:{done:false}})).status,409);
+assert.equal((await call('/api/state')).body.records.find(x=>x.id===item.id).data.done,true);
+assert.equal((await call('/api/items/'+item.id,'PATCH',{version:2,data:{done:false}})).body.record.data.done,false);
+assert.equal((await call('/api/admin','GET',undefined,{'oai-authenticated-user-id':'local-outsider'})).status,403);
+assert.equal((await call('/api/items/'+item.id,'DELETE',{version:3})).status,200);
+assert.equal((await call('/ocr/worker.min.js')).status,200);
+console.log('Built Worker HTTP smoke passed: SSR, D1 cross-request persistence, checkbox restore, conflict rejection, unauthorised denial and OCR asset. Synthetic loopback identities only.');

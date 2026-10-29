@@ -1,0 +1,49 @@
+import { handleApi } from './api.ts';
+import type { HubBindings } from './api.ts';
+import { object } from './domain.ts';
+import type { Data } from './domain.ts';
+const textSchema={type:'string',maxLength:12000};
+const resultSchema={type:'object',additionalProperties:false,required:['workflow','sourceId','summary','observedAt','runStatus'],properties:{workflow:{type:'string',maxLength:200},sourceId:{type:'string',maxLength:200},summary:textSchema,action:{type:'string',maxLength:4000},owner:{type:'string',maxLength:200},dueAt:{type:'string',maxLength:40},sourceLink:{type:'string',maxLength:1000},observedAt:{type:'string',maxLength:40},lastSuccess:{type:'string',maxLength:40},runStatus:{type:'string',enum:['ready','stale','error','awaiting_access','paused']}}};
+const sourceSchema={type:'object',additionalProperties:false,required:['title','sourceId','runStatus'],properties:{title:{type:'string',maxLength:200},sourceId:{type:'string',maxLength:200},runStatus:{type:'string',enum:['ready','stale','error','awaiting_access','paused']},observedAt:{type:'string',maxLength:40},lastSuccess:{type:'string',maxLength:40},sourceLink:{type:'string',maxLength:1000},detail:{type:'string',maxLength:4000}}};
+const TOOLS=[
+ {name:'bird_hub_invite_member',description:'Owner-only: authorize a household member by their exact ChatGPT email. This saves household membership permission; separately grant private Site access to that same email through Sites sharing. It never makes the Site public or grants owner/admin access.',inputSchema:{type:'object',additionalProperties:false,required:['email','displayName'],properties:{email:{type:'string',format:'email',maxLength:254},displayName:{type:'string',maxLength:200}}}},
+ {name:'bird_hub_read_household',description:'Read the shared Bird Family Hub calendar, shopping, reminders, recipes, meal plan and source freshness. Excludes private admin results.',inputSchema:{type:'object',additionalProperties:false,properties:{}}},
+ {name:'bird_hub_read_admin_results',description:'Read owner-only verified workflow results and their source/run timestamps. Does not execute, create, resume or modify any background task.',inputSchema:{type:'object',additionalProperties:false,properties:{}}},
+ {name:'bird_hub_upsert_result',description:'Owner-only: save one source-backed result from an existing workflow. Use the stable result ID; read the current version before updating. Does not change schedules or paused states. Preserve the real observedAt and lastSuccess timestamps and source evidence.',inputSchema:{type:'object',additionalProperties:false,required:['id','data'],properties:{id:{type:'string',pattern:'^[a-zA-Z0-9_-]+$',maxLength:150},version:{type:'integer',minimum:1},data:resultSchema}}},
+ {name:'bird_hub_upsert_source',description:'Owner-only: create or update one shared source freshness node after actually checking that source. Supply a stable sourceId and real timestamps. This records status only; it does not refresh an external source, change schedules, or resume paused tasks.',inputSchema:{type:'object',additionalProperties:false,required:['data'],properties:{recordId:{type:'string',pattern:'^[a-zA-Z0-9_-]+$',maxLength:150},version:{type:'integer',minimum:1},idempotencyKey:{type:'string',minLength:8,maxLength:150},data:sourceSchema}}}
+];
+function rpc(id:unknown,result:unknown,status=200):Response{return Response.json({jsonrpc:'2.0',id:id??null,result},{status,headers:{'Cache-Control':'private, no-store'}});}
+function error(id:unknown,code:number,message:string,status=400):Response{return Response.json({jsonrpc:'2.0',id:id??null,error:{code,message}},{status,headers:{'Cache-Control':'private, no-store'}});}
+function toolResult(value:unknown,isError=false):Data{return{content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError};}
+async function delegate(request:Request,env:HubBindings,path:string,method='GET',data?:unknown,key?:string):Promise<{ok:boolean;data:unknown}> {
+ const url=new URL(path,request.url);const headers=new Headers({'Content-Type':'application/json','Origin':url.origin});for(const name of ['oai-authenticated-user-id','oai-authenticated-user-email']){const v=request.headers.get(name);if(v)headers.set(name,v);}if(key)headers.set('Idempotency-Key',key);
+ const response=await handleApi(new Request(url,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);return{ok:response.ok,data:await response.json()};
+}
+/** Fixed operations only. The platform authenticates Site MCP callers; we also enforce owner membership. */
+export async function handleMcp(request:Request,env:HubBindings):Promise<Response>{
+ if(request.method!=='POST')return error(null,-32600,'Use POST for MCP requests.',405);
+ if(!request.headers.get('oai-authenticated-user-id'))return error(null,-32001,'Sign in with ChatGPT to use this private Site.',401);
+ const origin=request.headers.get('Origin');if(origin&&origin!==new URL(request.url).origin)return error(null,-32003,'Cross-site requests are not allowed.',403);
+ // Admin permission is checked independently of public/shared household read access.
+ const permission=await delegate(request,env,'/api/permissions');if(!permission.ok||!(permission.data as {admin?:boolean}).admin)return error(null,-32003,'Only the household owner can use the Site tools.',403);
+ let b:Data;let id:unknown=null;
+ try{
+  if(!request.headers.get('Content-Type')?.startsWith('application/json'))return error(null,-32600,'Use application/json.',415);
+  const reader=request.body?.getReader();if(!reader)return error(null,-32700,'Missing request.');const chunks:Uint8Array[]=[];let size=0;try{while(true){const p=await reader.read();if(p.done)break;size+=p.value.length;if(size>100000){await reader.cancel();return error(null,-32600,'Request too large.',413);}chunks.push(p.value);}}finally{reader.releaseLock();}const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}b=object(JSON.parse(new TextDecoder().decode(bytes)));id=b.id;
+  if(b.jsonrpc!=='2.0'||typeof b.method!=='string')return error(id,-32600,'Invalid JSON-RPC request.');
+  if(b.method==='server/discover')return rpc(id,{supportedVersions:['2026-07-28'],capabilities:{tools:{}}});
+  if(b.method==='tools/list')return rpc(id,{tools:TOOLS});
+  if(b.method!=='tools/call')return error(id,-32601,'Unknown method.');
+  const params=object(b.params);const args=object(params.arguments??{});let result:{ok:boolean;data:unknown};
+  if(params.name==='bird_hub_invite_member')result=await delegate(request,env,'/api/members/invites','POST',{email:args.email,displayName:args.displayName});
+  else if(params.name==='bird_hub_read_household')result=await delegate(request,env,'/api/state');
+  else if(params.name==='bird_hub_read_admin_results')result=await delegate(request,env,'/api/admin');
+  else if(params.name==='bird_hub_upsert_result'){
+   if(typeof args.id!=='string'||!/^[a-zA-Z0-9_-]{1,150}$/.test(args.id))return rpc(id,toolResult({error:'Supply a valid stable result ID.'},true));result=await delegate(request,env,'/api/admin/results/'+args.id,'PUT',{data:args.data,version:args.version});
+  }else if(params.name==='bird_hub_upsert_source'){
+   const data=object(args.data);if(args.recordId){if(typeof args.recordId!=='string'||!/^[a-zA-Z0-9_-]{1,150}$/.test(args.recordId))return rpc(id,toolResult({error:'Invalid source record ID.'},true));const current=await delegate(request,env,'/api/state');if(!current.ok)return rpc(id,toolResult(current.data,true));const records=(current.data as {records:{id:string;kind:string;data:Data}[]}).records;const found=records.find(r=>r.id===args.recordId);if(!found||found.kind!=='source'||found.data.sourceId!==data.sourceId)return rpc(id,toolResult({error:'The source ID must match the existing source record.'},true));result=await delegate(request,env,'/api/items/'+args.recordId,'PATCH',{version:args.version,data});}
+   else {if(typeof args.idempotencyKey!=='string')return rpc(id,toolResult({error:'A unique idempotencyKey is required to create a source.'},true));result=await delegate(request,env,'/api/items','POST',{kind:'source',data},args.idempotencyKey);}
+  }else return error(id,-32602,'Unknown tool.');
+  return rpc(id,toolResult(result.data,!result.ok));
+ }catch{return error(id,-32602,'Invalid request or arguments.');}
+}

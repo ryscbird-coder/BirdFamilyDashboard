@@ -1,0 +1,13 @@
+import {cp,mkdir,readFile,stat} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+const out='public/ocr';await mkdir(out,{recursive:true});
+for(const name of ['tesseract-core-lstm.wasm.js','tesseract-core-lstm.wasm'])await cp(path.join('node_modules/tesseract.js-core',name),path.join(out,name));
+await cp('node_modules/tesseract.js/dist/worker.min.js',path.join(out,'worker.min.js'));
+await cp('node_modules/@tesseract.js-data/eng/4.0.0/eng.traineddata.gz',path.join(out,'eng.traineddata.gz'));
+const result=spawnSync(process.execPath,['node_modules/vinext/dist/cli.js','build'],{stdio:'inherit',env:{...process.env,WRANGLER_SEND_METRICS:'false',WRANGLER_LOG_PATH:'.wrangler/logs'}});
+if(result.status!==0)process.exit(result.status||1);
+const manifest=JSON.parse(await readFile('dist/.openai/hosting.json','utf8'));
+if(manifest.d1!=='DB'||!manifest.project_id)throw Error('Sites manifest was not preserved');
+await stat('dist/.openai/drizzle/meta/_journal.json');
+console.log('Verified Sites build, D1 manifest and migration journal.');
