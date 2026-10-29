@@ -98,7 +98,9 @@ type DnsResult = { Status?: unknown; Answer?: DnsAnswer[]; TC?: unknown };
 async function resolvePublicHost(hostname: string, signal: AbortSignal, fetcher: typeof fetch): Promise<string[]> {
   const answers = await Promise.all(['A', 'AAAA'].map(async type => {
     const url = new URL(DNS_ENDPOINT); url.searchParams.set('name', hostname); url.searchParams.set('type', type);
-    const response = await fetcher(url.href, { method: 'GET', redirect: 'error', credentials: 'omit', cache: 'no-store', signal, headers: { Accept: 'application/dns-json' } });
+    // Workers rejects redirect:'error' before sending the request. Manual preserves
+    // the same no-follow policy: anything except a direct 200 is rejected below.
+    const response = await fetcher(url.href, { method: 'GET', redirect: 'manual', credentials: 'omit', cache: 'no-store', signal, headers: { Accept: 'application/dns-json' } });
     if (response.status !== 200) { await response.body?.cancel(); throw new CalendarSubscriptionError('feed_dns_failed', 'The calendar provider’s public address could not be verified. Try again later.'); }
     const result = JSON.parse(await boundedText(response, MAX_DNS_BYTES, 'feed_dns_failed')) as DnsResult;
     if (result.Status !== 0 || result.TC === true || (result.Answer !== undefined && !Array.isArray(result.Answer))) throw new CalendarSubscriptionError('feed_dns_failed', 'The calendar provider’s public address could not be verified. Try again later.');

@@ -127,3 +127,52 @@ test('optional publisher restrictions use exact hostnames, including redirects',
   assert.equal((await read({ trustedHosts: ['calendar.example.net'] })).events.length, 1);
   await assert.rejects(read({ trustedHosts: ['calendar.example.net'], fetch: async () => new Response(null, { status: 302, headers: { Location: 'https://cdn.example.org/a.ics' } }) }), error => safeError(error) && error.code === 'untrusted_feed_host');
 });
+
+test('Workers runtime imports with default DNS and rejects DNS redirects without following them', async () => {
+  const [{ Miniflare }, { build }] = await Promise.all([import('miniflare'), import('esbuild')]);
+  const bundled = await build({
+    stdin: { contents: `
+      import { fetchSubscriptionEvents } from './server/calendar-subscriptions.ts';
+      export default { async fetch(request) {
+        const path = new URL(request.url).pathname;
+        if (path === '/unsupported-redirect') {
+          try { new Request('https://calendar.example.net/', { redirect: 'error' }); return Response.json({ rejected: false }); }
+          catch (error) { return Response.json({ rejected: true, name: error.name }); }
+        }
+        try {
+          const result = await fetchSubscriptionEvents({
+            url: path === '/dns-redirect' ? 'https://dns-redirect.example.net/calendar.ics' : ${JSON.stringify(url)},
+            calendar: ${JSON.stringify(calendar)}, windowStart: ${JSON.stringify(windowStart)}, windowEnd: ${JSON.stringify(windowEnd)}
+          });
+          return Response.json(result);
+        } catch (error) { return Response.json({ code: error.code, message: error.safeMessage }, { status: 502 }); }
+      } };
+    `, resolveDir: process.cwd(), sourcefile: 'calendar-subscriptions-runtime-fixture.ts', loader: 'ts' },
+    bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', logLevel: 'silent'
+  });
+  const mf = new Miniflare({ cf: false, workers: [
+    { name: 'subject', modules: true, compatibilityDate: '2026-05-15', compatibilityFlags: ['nodejs_compat'], script: bundled.outputFiles[0].text, outboundService: 'fixture' },
+    { name: 'fixture', modules: true, compatibilityDate: '2026-05-15', outboundService: { network: { allow: [] } }, script: `
+      export default { async fetch(request) {
+        const url = new URL(request.url);
+        if (url.hostname === 'cloudflare-dns.com') {
+          if (url.searchParams.get('name') === 'dns-redirect.example.net') return new Response(null, { status: 302, headers: { Location: 'https://resolved.example.org/dns-result' } });
+          return Response.json({ Status: 0, Answer: [{ type: url.searchParams.get('type') === 'AAAA' ? 28 : 1, data: url.searchParams.get('type') === 'AAAA' ? '2606:4700:4700::1111' : '8.8.8.8' }] });
+        }
+        // A followed DNS redirect would succeed, so the test detects accidental forwarding.
+        if (url.hostname === 'resolved.example.org') return Response.json({ Status: 0, Answer: [{ type: 1, data: '8.8.8.8' }] });
+        if (url.hostname === 'calendar.example.net' || url.hostname === 'dns-redirect.example.net') return new Response(${JSON.stringify(ics())}, { headers: { 'Content-Type': 'text/calendar' } });
+        return new Response('Unexpected synthetic request', { status: 500 });
+      } };
+    ` }
+  ] });
+  try {
+    const unsupported = await mf.dispatchFetch('https://runtime.example.org/unsupported-redirect');
+    assert.deepEqual(await unsupported.json(), { rejected: true, name: 'TypeError' });
+    const success = await mf.dispatchFetch('https://runtime.example.org/import');
+    const imported = await success.json() as { events: { title: string }[]; authoritative: boolean };
+    assert.equal(success.status, 200); assert.equal(imported.authoritative, true); assert.equal(imported.events[0].title, 'Synthetic session');
+    const redirect = await mf.dispatchFetch('https://runtime.example.org/dns-redirect');
+    assert.equal(redirect.status, 502); assert.equal((await redirect.json() as { code: string }).code, 'feed_dns_failed');
+  } finally { await mf.dispose(); }
+});
