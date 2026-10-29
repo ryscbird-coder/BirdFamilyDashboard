@@ -86,3 +86,11 @@ Changing the calendar selection removes deselected imported events transactional
 Read full shows the original saved ChatGPT report body verbatim, including the original dated Humber block where the task's rota rule includes it. Only the Home card summary is shortened. The display adapter handles Markdown tables/links and ChatGPT presentation wrappers without rewriting report sections or executing arbitrary HTML; platform-only citations and images link to the original ChatGPT report. News and travel task handoffs require the complete original body on future runs. Source timestamps remain the original source-check times. The app uses a soft ivory/mint light palette while retaining the same orbital layout and source web.
 
 Email/transport source nodes display actual background-job completion status, not a manual setup form. A partial job must say partial/needs action, and a successful check with no findings is still a successful check. Never replace missing or partial evidence with an invented “successfully organised” message.
+
+## Cookbook links and recipe imports
+
+Recipe detail uses numbered, tickable steps beside portion-scaled ingredients. Direct shopping imports retain the existing server-side idempotency and cupboard exclusions. `yieldUnit: batches` supports clippings that do not specify a serving yield without inventing a person count. Pack weights that are absent remain explicit pack units. Source photos and dish images are not stored.
+
+`POST /api/recipes/import-link` reads bounded JSON-LD recipe text from allowlisted HTTPS BBC Good Food/Good Food, HelloFresh and Gousto pages, with checked redirects and a timeout. It returns a review draft; it never silently saves or imports arbitrary URLs. Imported recipes retain source attribution. Publisher blocking and pages without recipe metadata produce a manual-entry fallback. Fractional quantities are parsed for scaling, and unrecognised amounts remain review text.
+
+Optional secret `HUB_RECIPE_IMPORT_JSON` accepts a one-time owner-authorized `{batchId, recipes: [{id, data}]}` envelope. It uses the existing transactional bootstrap marker and insert-only IDs, never overwrites household edits, and keeps private recipe content outside Git.
