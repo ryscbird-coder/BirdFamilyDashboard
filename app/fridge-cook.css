@@ -1,0 +1,398 @@
+/* Cook from my fridge: scoped presentation for the permission, review and recipe flow. */
+.fridge-backdrop {
+  background: #17342dd9;
+  backdrop-filter: blur(9px);
+  padding: 24px;
+}
+.fridge-modal.modal {
+  --fridge-ink: #294e43;
+  --fridge-muted: #718374;
+  --fridge-line: #d5e1ce;
+  --fridge-mint: #e4efdc;
+  --fridge-paper: #fffef7;
+  color-scheme: light;
+  background: #fafbf3;
+  border: 1px solid #cdddc4;
+  border-radius: 21px;
+  color: var(--fridge-ink);
+  max-width: 920px;
+  max-height: calc(100dvh - 48px);
+  box-shadow: 0 28px 100px #061d2466;
+}
+.fridge-modal .modal-header {
+  background: #f6f9ed;
+  border-color: #dbe5d2;
+  padding: 23px 27px;
+}
+.fridge-modal .modal-header h2 { color: #294e43; font-size: 22px; letter-spacing: -.03em; }
+.fridge-modal .modal-body { padding: 25px 27px; overflow-y: auto; overscroll-behavior: contain; }
+.fridge-modal .close-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  color: #607f6a;
+  background: #edf3e5;
+  border-color: #d1dfc7;
+  border-radius: 11px;
+}
+.fridge-modal .close-button:hover { background: #deebd6; color: #365d46; }
+.fridge-modal :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #548972;
+  outline-offset: 4px;
+}
+.fridge-modal h3 { color: #355849; font-size: 18px; font-weight: 550; letter-spacing: -.02em; line-height: 1.5; }
+.fridge-modal p { color: #6c8070; font-size: 13px; line-height: 1.85; }
+.fridge-modal .subtle,
+.fridge-modal .form-note { color: #758771; line-height: 1.85; }
+.fridge-modal .button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 11px 17px;
+  background: #edf3e5;
+  border: 1px solid #cedec5;
+  border-radius: 11px;
+  color: #4f7058;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 550;
+  white-space: normal;
+}
+.fridge-modal .button:hover { background: #e0ecd7; border-color: #b8cfae; }
+.fridge-modal .button.primary {
+  color: #294b35;
+  background: #c8dfb8;
+  border-color: #b4cf9f;
+  box-shadow: inset 0 1px #edf9de;
+}
+.fridge-modal .button.primary:hover { background: #bad6a6; border-color: #9dbd87; }
+.fridge-modal .button.ghost { background: transparent; border-color: #cddbc4; color: #66815f; }
+.fridge-modal .button.ghost:hover { background: #eaf2df; }
+.fridge-modal .button.danger { background: #f9eeea; color: #9b655c; border-color: #e5d0c5; }
+.fridge-modal .button:disabled { opacity: .55; cursor: not-allowed; }
+.fridge-modal .button svg { width: 17px; height: 17px; }
+.fridge-modal .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  color: #70816d;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 9px;
+}
+.fridge-modal .icon-button:hover { color: #9c6858; border-color: #e6d6c9; background: #f5eee5; }
+.fridge-intro {
+  position: relative;
+  padding: 27px 29px;
+  border: 1px solid #d1e1c5;
+  border-radius: 16px;
+  background: radial-gradient(ellipse at 100% 0, #cde7bd77, transparent 65%), linear-gradient(145deg, #eff7e8, #e8f1e0);
+  margin-bottom: 23px;
+  overflow: hidden;
+}
+.fridge-intro h2,
+.fridge-intro h3 { max-width: 550px; font-size: 28px; font-weight: 500; line-height: 1.3; letter-spacing: -.035em; color: #365b42; margin: 0 0 15px; }
+.fridge-intro>p { max-width: 65ch; margin: 0 0 14px; color: #6a8065; font-size: 13px; line-height: 1.9; }
+.fridge-intro>p:last-child { margin-bottom: 0; }
+.fridge-intro>svg { width: 34px; height: 34px; color: #77936b; margin: 0 0 17px; }
+.fridge-intro .eyebrow { color: #7d9572; font-size: 9px; letter-spacing: .15em; margin-bottom: 12px; }
+.fridge-intro strong { color: #44663e; font-weight: 600; }
+.fridge-steps {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 23px;
+  overflow-x: auto;
+  padding: 3px 2px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #c2d2b8 transparent;
+  overscroll-behavior-x: contain;
+}
+.fridge-steps>span,
+.fridge-steps .fridge-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #e0e8d7;
+  border-radius: 20px;
+  background: #f2f6eb;
+  color: #889981;
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.fridge-steps>span.active,
+.fridge-steps>span.current,
+.fridge-steps>span[aria-current=step],
+.fridge-steps .fridge-step.active,
+.fridge-steps .fridge-step.current {
+  background: #dcebcf;
+  color: #557248;
+  border-color: #bdd3ac;
+  box-shadow: inset 0 1px #f3fbe9;
+}
+.fridge-steps .complete,
+.fridge-steps .completed { color: #6c8760; border-color: #d0dfc3; background: #ebf3e1; }
+.fridge-steps svg { width: 13px; height: 13px; flex: none; }
+.fridge-camera { margin: 0 0 23px; }
+.fridge-camera video,
+.fridge-camera canvas {
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  max-height: 40vh;
+  max-height: 40dvh;
+  object-fit: contain;
+  background: #e5ecdf;
+  border: 1px solid #cadbc0;
+  border-radius: 15px;
+  margin: 0 0 17px;
+}
+.fridge-camera p { max-width: 70ch; margin: 10px 0 16px; color: #75866c; font-size: 12px; line-height: 1.85; }
+.fridge-camera .fridge-actions { margin-top: 16px; }
+.fridge-camera-blocked,
+.fridge-processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 180px;
+  padding: 25px;
+  border: 1px dashed #c5d7ba;
+  border-radius: 14px;
+  background: #eef5e6;
+  color: #7a9070;
+  font-size: 13px;
+  line-height: 1.85;
+  text-align: center;
+}
+.fridge-camera-blocked svg,
+.fridge-processing svg { width: 30px; height: 30px; color: #8aa37c; }
+.fridge-camera-blocked strong,
+.fridge-processing strong { color: #4e7143; font-weight: 550; }
+.fridge-ingredient-list { display: flex; flex-direction: column; gap: 12px; margin: 18px 0 22px; }
+.fridge-ingredient-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 9px 12px;
+  align-items: end;
+  min-width: 0;
+  padding: 15px 16px;
+  background: #fffef8;
+  border: 1px solid #dae4d0;
+  border-radius: 12px;
+}
+.fridge-ingredient-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(70px, .7fr) minmax(70px, .7fr); gap: 11px; min-width: 0; }
+.fridge-ingredient-fields .field { margin-bottom: 0; }
+.fridge-ingredient-row>.icon-button { align-self: end; margin-bottom: 1px; }
+.fridge-ingredient-warning {
+  grid-column: 1/-1;
+  display: block;
+  padding: 8px 11px;
+  border: 1px solid #e4dcbf;
+  border-radius: 7px;
+  color: #9b8658;
+  background: #faf5e6;
+  font-size: 11px;
+  line-height: 1.8;
+  margin: 2px 0 0;
+}
+.fridge-ingredient-row.uncertain { border-color: #dfd3b4; background: #fffdf4; }
+.fridge-modal .field { color: #68835e; font-size: 12px; gap: 8px; margin-bottom: 18px; }
+.fridge-modal .field input,
+.fridge-modal .field select,
+.fridge-modal .field textarea,
+.fridge-ingredient-fields input,
+.fridge-ingredient-fields select {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #cfdec4;
+  border-radius: 9px;
+  background: #fffef8;
+  color: #35583f;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  box-shadow: inset 0 1px 2px #48634704;
+}
+.fridge-modal .field textarea { min-height: 115px; resize: vertical; line-height: 1.85; }
+.fridge-modal .field input::placeholder,
+.fridge-modal .field textarea::placeholder { color: #9caa92; }
+.fridge-modal .field input:focus,
+.fridge-modal .field select:focus,
+.fridge-modal .field textarea:focus { border-color: #86ad74; box-shadow: 0 0 0 3px #b4d69d22; }
+.fridge-modal .field label { color: #68835e; font-size: 12px; }
+.fridge-ingredient-fields .field { margin-bottom: 0; font-size: 10px; }
+.fridge-options { display: flex; flex-wrap: wrap; gap: 17px; margin: 21px 0; padding: 21px 0 4px; border-top: 1px solid #dde6d4; }
+.fridge-options>.field { flex: 1; min-width: 150px; margin-bottom: 0; }
+.fridge-options>.field:first-child { flex: .45; min-width: 130px; }
+.fridge-options .field-row { display: flex; flex: 1; gap: 16px; width: 100%; }
+.fridge-options .field-row>.field { flex: 1; min-width: 0; }
+.fridge-privacy {
+  margin: 21px 0;
+  padding: 0 16px;
+  border: 1px solid #dce5d0;
+  border-radius: 11px;
+  background: #f1f6e9;
+}
+.fridge-privacy>summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  list-style: none;
+  min-height: 48px;
+  padding: 11px 0;
+  color: #68845b;
+  font-size: 11px;
+  line-height: 1.8;
+  font-weight: 500;
+  cursor: pointer;
+}
+.fridge-privacy>summary::-webkit-details-marker { display: none; }
+.fridge-privacy>summary:before { content: "+"; color: #92a581; font-size: 16px; font-weight: 400; }
+.fridge-privacy[open]>summary:before { content: "−"; }
+.fridge-privacy>summary svg { width: 15px; height: 15px; color: #809c71; }
+.fridge-privacy p,
+.fridge-privacy li { color: #7f8f75; font-size: 11px; line-height: 1.9; }
+.fridge-privacy p:last-child { margin-bottom: 16px; }
+.fridge-privacy ul,
+.fridge-privacy ol { padding-left: 19px; margin: 0 0 16px; }
+.fridge-privacy li { margin-bottom: 9px; padding-left: 2px; }
+.fridge-privacy li::marker { color: #91a67f; }
+.fridge-privacy a { color: #6b8b53; text-decoration: underline; text-underline-offset: 3px; }
+.fridge-privacy strong { font-weight: 600; color: #68805c; }
+.fridge-proposal { min-width: 0; }
+.fridge-proposal-main { min-width: 0; }
+.fridge-proposal:has(>.fridge-proposal-main) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, .43fr); gap: 21px; align-items: start; }
+.fridge-proposal .field textarea { background: #fffef8; line-height: 1.9; }
+.fridge-proposal>h3,
+.fridge-proposal-main>h3 { font-size: 21px; color: #3c6247; margin: 0 0 19px; line-height: 1.4; }
+.fridge-missing-ingredients {
+  min-width: 0;
+  padding: 19px 19px 17px;
+  background: #f8f2e2;
+  border: 1px solid #e6ddc4;
+  border-radius: 12px;
+  color: #9b875e;
+  font-size: 12px;
+  line-height: 1.85;
+  margin: 0 0 20px;
+}
+.fridge-missing-ingredients h3,
+.fridge-missing-ingredients h4 { color: #8c7851; font-size: 15px; font-weight: 550; margin: 0 0 13px; letter-spacing: -.015em; line-height: 1.6; }
+.fridge-missing-ingredients p { color: #a08e67; font-size: 11px; line-height: 1.9; margin-bottom: 12px; }
+.fridge-missing-ingredients ul,
+.fridge-missing-ingredients ol { padding-left: 18px; margin: 0 0 13px; }
+.fridge-missing-ingredients li { color: #947f57; margin-bottom: 10px; padding-left: 2px; font-size: 12px; line-height: 1.8; }
+.fridge-missing-ingredients li::marker { color: #bba476; }
+.fridge-missing-ingredients strong { color: #887147; font-weight: 600; }
+.fridge-missing-ingredients .button { margin-top: 8px; width: 100%; font-size: 11px; background: #f1e8cc; border-color: #d9cba5; color: #917c48; }
+.fridge-missing-ingredients .button:hover { background: #e9debc; border-color: #cbb985; }
+.fridge-missing-ingredients>.check-row { min-height: 52px; border-color: #e8dec5; padding: 11px 0; color: #947f57; font-size: 12px; }
+.fridge-missing-ingredients input[type=checkbox] { accent-color: #b69c66; }
+.fridge-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 19px;
+  margin-top: 22px;
+  border-top: 1px solid #dce5d2;
+}
+.fridge-actions>.button:first-child:not(.primary) { margin-right: auto; }
+.fridge-actions .form-note { flex-basis: 100%; margin: 0 0 8px; font-size: 11px; }
+.fridge-modal .notice { color: #788c6d; background: #edf4e2; border-color: #d3e1c3; font-size: 12px; line-height: 1.85; }
+.fridge-modal .notice.warning { color: #9b8553; background: #faf4e1; border-color: #e5d9b7; }
+.fridge-modal .notice.error,
+.fridge-modal .error-text { color: #a77366; background: #f9eeea; border-color: #e4cdc3; }
+.fridge-modal .error-text { padding: 10px 13px; border: 1px solid #e4cdc3; border-radius: 8px; font-size: 12px; line-height: 1.85; }
+.fridge-modal .notice.success { color: #6a8b5c; background: #ebf5df; border-color: #d1e3bd; }
+@media (max-width:700px) {
+  .fridge-backdrop { padding: 14px; }
+  .fridge-modal.modal { border-radius: 16px; max-height: calc(100dvh - 28px); }
+  .fridge-modal .modal-header { padding: 19px 21px; gap: 12px; }
+  .fridge-modal .modal-header h2 { font-size: 21px; line-height: 1.5; }
+  .fridge-modal .modal-body { padding: 21px; }
+  .fridge-intro { padding: 24px 22px; border-radius: 13px; margin-bottom: 21px; }
+  .fridge-intro h2,
+  .fridge-intro h3 { font-size: 26px; line-height: 1.35; }
+  .fridge-intro>p { font-size: 13px; line-height: 1.9; }
+  .fridge-intro .eyebrow { font-size: 8px; line-height: 1.8; }
+  .fridge-steps { margin-bottom: 19px; gap: 6px; }
+  .fridge-steps>span,
+  .fridge-steps .fridge-step { padding: 7px 10px; font-size: 9px; min-height: 34px; }
+  .fridge-camera video,
+  .fridge-camera canvas { max-height: 40dvh; border-radius: 12px; }
+  .fridge-camera p { font-size: 12px; line-height: 1.9; }
+  .fridge-ingredient-list { gap: 11px; margin: 17px 0 21px; }
+  .fridge-ingredient-row { padding: 14px 13px; gap: 9px; border-radius: 10px; }
+  .fridge-ingredient-fields { grid-template-columns: minmax(0, 1.6fr) minmax(65px, .6fr) minmax(65px, .6fr); gap: 8px; }
+  .fridge-modal .field input,
+  .fridge-modal .field select,
+  .fridge-modal .field textarea,
+  .fridge-ingredient-fields input,
+  .fridge-ingredient-fields select { min-height: 46px; padding: 11px 10px; font-size: 16px; }
+  .fridge-modal .field textarea { font-size: 14px; line-height: 1.9; }
+  .fridge-modal .field { font-size: 12px; }
+  .fridge-ingredient-fields .field { font-size: 10px; }
+  .fridge-ingredient-warning { font-size: 11px; line-height: 1.85; padding: 9px 11px; }
+  .fridge-options { gap: 15px; padding-top: 19px; }
+  .fridge-options>.field:first-child { min-width: 120px; }
+  .fridge-options .field-row { gap: 12px; }
+  .fridge-privacy { padding: 0 14px; margin: 20px 0; border-radius: 9px; }
+  .fridge-privacy>summary { min-height: 50px; font-size: 12px; line-height: 1.8; }
+  .fridge-privacy p,
+  .fridge-privacy li { font-size: 11px; line-height: 1.95; }
+  .fridge-proposal:has(>.fridge-proposal-main) { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .fridge-proposal>h3,
+  .fridge-proposal-main>h3 { font-size: 21px; margin-bottom: 18px; }
+  .fridge-missing-ingredients { padding: 19px 17px; border-radius: 10px; font-size: 12px; }
+  .fridge-missing-ingredients h3,
+  .fridge-missing-ingredients h4 { font-size: 16px; }
+  .fridge-missing-ingredients p { font-size: 12px; }
+  .fridge-missing-ingredients li { font-size: 13px; line-height: 1.85; margin-bottom: 11px; }
+  .fridge-actions { gap: 9px; padding-top: 18px; margin-top: 22px; }
+  .fridge-actions>.button { min-height: 46px; font-size: 12px; padding: 12px 14px; }
+  .fridge-modal .notice { font-size: 12px; line-height: 1.9; }
+}
+@media (max-width:420px) {
+  .fridge-backdrop { padding: 9px; }
+  .fridge-modal.modal { max-height: calc(100dvh - 18px); border-radius: 14px; }
+  .fridge-modal .modal-header { padding: 17px 16px; }
+  .fridge-modal .modal-header h2 { font-size: 19px; }
+  .fridge-modal .modal-body { padding: 17px 16px; }
+  .fridge-intro { padding: 22px 18px; }
+  .fridge-intro h2,
+  .fridge-intro h3 { font-size: 24px; }
+  .fridge-intro>p { font-size: 12px; }
+  .fridge-steps { margin-left: -1px; margin-right: -1px; }
+  .fridge-ingredient-row { grid-template-columns: minmax(0, 1fr) 44px; padding: 13px 11px; gap: 7px; align-items: start; }
+  .fridge-ingredient-row>.icon-button { align-self: start; margin-top: 20px; }
+  .fridge-ingredient-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px 9px; }
+  .fridge-ingredient-fields>.field:first-child,
+  .fridge-ingredient-fields>label:first-child { grid-column: 1/-1; }
+  .fridge-ingredient-fields>input:first-child { grid-column: 1/-1; }
+  .fridge-ingredient-warning { margin-top: 5px; font-size: 10px; }
+  .fridge-options { display: block; }
+  .fridge-options>.field { min-width: 0; margin-bottom: 17px; }
+  .fridge-options .field-row { display: block; }
+  .fridge-options .field-row>.field { margin-bottom: 17px; }
+  .fridge-actions { justify-content: stretch; gap: 8px; }
+  .fridge-actions>.button { flex: 1; min-width: 120px; font-size: 11px; padding: 12px; }
+  .fridge-actions>.button:first-child:not(.primary) { margin-right: 0; }
+  .fridge-actions>.button.primary { flex-basis: 100%; }
+  .fridge-missing-ingredients { padding: 18px 15px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .fridge-modal *,
+  .fridge-modal *:before,
+  .fridge-modal *:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

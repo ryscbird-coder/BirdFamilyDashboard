@@ -1,0 +1,12 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "bird-family-hub-recipe-ai",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": {"binding": "AI"},
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": false},
+  "logpush": false
+}
