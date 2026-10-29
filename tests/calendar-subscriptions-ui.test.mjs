@@ -37,6 +37,7 @@ async function createHost(initial=defaultStatus(),rejectWrites=false){
  globalThis.fetch=async(url,options={})=>{
   const method=options.method||'GET';const body=options.body?JSON.parse(options.body):undefined;calls.push({url:String(url),method,body});
   if(rejectWrites&&method!=='GET')return{ok:false,json:async()=>({error:{message:'Synthetic provider failure; previous events retained.'}})};
+  if(String(url)==='/api/icloud/discover'&&method==='POST')state.calendars.push({id:'calendar_discovered',displayName:'Future child calendar',calendarKey:'key_discovered',personId:null,sharedCalendarId:'shared_discovered',version:1,available:true});
   if(String(url)==='/api/icloud/subscriptions'&&method==='POST')state.subscriptions.push({...subscription(),title:body.title,personId:body.personId});
   if(String(url)==='/api/icloud/calendar-settings'){const found=state.subscriptions.find(item=>item.calendarId===body.calendarId);if(found){found.personId=body.personId;found.mappingVersion++;}}
   if(String(url)==='/api/icloud/subscriptions/feed_fixture'&&method==='POST'){const found=state.subscriptions.find(item=>item.id==='feed_fixture');if(found){found.title=body.title;found.version++;}}
@@ -108,5 +109,30 @@ test('the real shared 32-calendar limit permits more than eight and blocks a thi
   assert.ok(host.nodes().some(node=>node.type==='h3'&&text(node)==='Choose up to 32 of your calendars'));
   assert.equal(host.field('Calendar 31').props.disabled,false);host.field('Calendar 31').props.onChange({target:{checked:true}});assert.equal(host.field('Calendar 32').props.disabled,true);
   host.field('Calendar 0').props.onChange({target:{checked:false}});assert.equal(host.field('Calendar 32').props.disabled,false);
+ }finally{host.close();}
+});
+
+
+test('finding new iCloud calendars uses stored credentials and preserves saved and unsaved choices',async()=>{
+ const status=defaultStatus();status.configured=true;status.status='ready';status.username='fixture@example.test';status.lastSuccess='2026-10-29T11:00:00Z';
+ status.calendars=[
+  {id:'calendar_saved',displayName:'Saved family calendar',calendarKey:'key_saved',personId:null,sharedCalendarId:'shared_saved',version:1,available:true},
+  {id:'calendar_pending',displayName:'Pending family calendar',calendarKey:'key_pending',personId:null,sharedCalendarId:'shared_pending',version:1,available:true},
+  {id:'calendar_missing',displayName:'Last-known family calendar',calendarKey:'key_missing',personId:null,sharedCalendarId:'shared_missing',version:1,available:false,lastKnown:true},
+ ];status.selectedCalendarIds=['calendar_saved','calendar_missing'];
+ const host=await createHost(status);try{
+  host.field('Pending family calendar').props.onChange({target:{checked:true}});
+  change(host.field('Person for Saved family calendar'),'profile_ryan');
+  assert.equal(host.field('Last-known family calendar').props.disabled,false,'an unavailable saved selection must still be removable');
+  assert.ok(host.nodes().some(node=>node.type==='small'&&text(node).includes('Not in latest Apple list')));
+  host.button('Find new iCloud calendars').props.onClick();await host.settle();
+  const request=host.calls.find(call=>call.url==='/api/icloud/discover');assert.equal(request.method,'POST');assert.deepEqual(request.body,{});
+  assert.deepEqual(host.state.selectedCalendarIds,['calendar_saved','calendar_missing'],'discovery must not modify saved sharing choices');
+  assert.equal(host.state.username,'fixture@example.test');assert.equal(host.state.lastSuccess,'2026-10-29T11:00:00Z');
+  assert.ok(!host.calls.some(call=>call.url==='/api/icloud/connect'),'discovery must not reconnect or resend a password');
+  assert.equal(host.field('Saved family calendar').props.checked,true);assert.equal(host.field('Pending family calendar').props.checked,true,'pending selection must survive discovery');
+  assert.equal(host.field('Person for Saved family calendar').props.value,'profile_ryan','pending person assignment must survive discovery');
+  assert.equal(host.field('Future child calendar').props.checked,false,'a newly discovered calendar must not be shared automatically');
+  host.field('Last-known family calendar').props.onChange({target:{checked:false}});assert.equal(host.field('Last-known family calendar').props.disabled,true,'an unavailable calendar cannot be newly selected');
  }finally{host.close();}
 });

@@ -11,6 +11,8 @@ export type ICloudSetupProps = {
   onRefresh: () => Promise<boolean>;
 };
 type CalendarChoice = {
+  available?: boolean;
+  lastKnown?: boolean;
   id: string;
   displayName: string;
   color?: string;
@@ -101,6 +103,11 @@ export default function ICloudSetup({ profiles, canManageHousehold, onRefresh }:
     if (mounted.current) {
       setStatus(next); setUsername(next.username || "");
       if (!preserveOwnDrafts) { setSelection(next.selectedCalendarIds); setDrafts(Object.fromEntries(next.calendars.map(calendar => [calendar.id, { personId: calendar.personId || "", sharedCalendarId: calendar.sharedCalendarId }]))); }
+      else {
+        const availableIds = new Set(next.calendars.map(calendar => calendar.id));
+        setSelection(current => current.filter(id => availableIds.has(id)));
+        setDrafts(current => Object.fromEntries(next.calendars.map(calendar => [calendar.id, current[calendar.id] || { personId: calendar.personId || "", sharedCalendarId: calendar.sharedCalendarId }])));
+      }
       setHouseholdDrafts(Object.fromEntries(next.householdCalendars.map(calendar => [calendar.calendarKey, { personId: calendar.personId || "", sharedCalendarId: calendar.sharedCalendarId }])));
       setSubscriptionPeople(Object.fromEntries(next.subscriptions.map(subscription => [subscription.id, subscription.personId || ""])));
     }
@@ -132,7 +139,7 @@ export default function ICloudSetup({ profiles, canManageHousehold, onRefresh }:
     setBusyAction(action); setRequestError(""); setMessage("");
     try {
       await operation(abort.signal);
-      await readStatus(abort.signal, action === "mapping" || action.startsWith("subscription"));
+      await readStatus(abort.signal, action === "mapping" || action === "discover" || action.startsWith("subscription"));
       await refreshRef.current();
       if (mounted.current) setMessage(success);
       return true;
@@ -154,6 +161,11 @@ export default function ICloudSetup({ profiles, canManageHousehold, onRefresh }:
       const pending = requestJson("/api/icloud/connect", "POST", encoded, signal); encoded = ""; await pending;
     }).then(ok => { if (ok && mounted.current) setChangingAccount(false); });
     encoded = "";
+  };
+  const discoverCalendars = async () => {
+    await operate("discover", "Your Apple calendar list was refreshed. Review new calendars below; existing selections and saved events were kept.", async signal => {
+      await requestJson("/api/icloud/discover", "POST", "{}", signal);
+    });
   };
   const saveAndSync = async () => {
     if (!status || operationBusy.current) return;
@@ -245,14 +257,14 @@ export default function ICloudSetup({ profiles, canManageHousehold, onRefresh }:
           const selected = selection.includes(calendar.id);
           const draft = drafts[calendar.id] || { personId: calendar.personId || "", sharedCalendarId: calendar.sharedCalendarId };
           return <section className="icloud-calendar-mapping" key={calendar.id}>
-            <label className="icloud-calendar-choice check-row"><input type="checkbox" checked={selected} disabled={busy || (!selected && selection.length >= MAX_SELECTED_CALENDARS)} onChange={event => setSelection(current => event.target.checked ? [...current, calendar.id] : current.filter(id => id !== calendar.id))}/><span className="person-dot" style={{ background: calendar.color || "#78d3ef" }}/><span>{calendar.displayName}</span></label>
+            <label className="icloud-calendar-choice check-row"><input type="checkbox" checked={selected} disabled={busy || (!selected && (calendar.available === false || selection.length >= MAX_SELECTED_CALENDARS))} onChange={event => setSelection(current => event.target.checked ? [...current, calendar.id] : current.filter(id => id !== calendar.id))}/><span className="person-dot" style={{ background: calendar.color || "#78d3ef" }}/><span>{calendar.displayName}{calendar.available === false && <small className="item-meta">Not in latest Apple list · last saved events retained</small>}</span></label>
             {selected && <div className="icloud-calendar-settings"><label className="field">Person for {calendar.displayName}<select value={draft.personId} disabled={busy} onChange={event => updateDraft(calendar.id, { personId: event.target.value })}>{personOptions}</select></label><label className="field">Already shared in the hub?<select value={draft.sharedCalendarId} disabled={busy} onChange={event => updateDraft(calendar.id, { sharedCalendarId: event.target.value })}>{sharingOptions(calendar.sharedCalendarId)}</select></label></div>}
           </section>;
         }) : <p className="subtle">No calendars were returned by your account check.</p>}
       </div>
       {!profiles.length && <p className="form-note">Add family profiles in Settings to make person assignments available. Shared / unassigned still works.</p>}
       <p className="form-note">Choose an existing calendar here only if it is the same shared calendar. Otherwise keep it separate. This does not change anything in Apple Calendar.</p>
-      <div className="actions"><button className="button primary" disabled={busy} onClick={() => void saveAndSync()}><Icon name="refresh" size={15}/>{busyAction === "sync" ? "Saving choices & syncing…" : selection.length ? "Save choices & sync my calendars" : "Stop sharing my calendars"}</button><button className="button ghost small" disabled={busy} onClick={() => setChangingAccount(true)}>Change my Apple account</button></div>
+      <div className="actions"><button className="button primary" disabled={busy} onClick={() => void saveAndSync()}><Icon name="refresh" size={15}/>{busyAction === "sync" ? "Saving choices & syncing…" : selection.length ? "Save choices & sync my calendars" : "Stop sharing my calendars"}</button><button className="button ghost small" disabled={busy} onClick={() => void discoverCalendars()}>{busyAction === "discover" ? "Finding calendars…" : "Find new iCloud calendars"}</button><button className="button ghost small" disabled={busy} onClick={() => setChangingAccount(true)}>Change my Apple account</button></div>
       <p className="form-note" style={{ marginTop: 14 }}>Read-only manual sync covers the previous 30 days and next 180 days. Changing or disconnecting your account leaves other family members’ private connections intact. Shared events remain when another selected connection still supplies them.</p>
       <dl className="source-facts"><dt>Your last successful calendar sync</dt><dd>{status?.lastSuccess ? `${formatDate(status.lastSuccess)} at ${time(status.lastSuccess)} London time` : "No successful calendar sync yet"}</dd>{status?.lastAttempt && <><dt>Your last connection / sync attempt</dt><dd>{formatDate(status.lastAttempt)} at {time(status.lastAttempt)} London time</dd></>}</dl><button className="panel-link danger" disabled={busy} onClick={() => setConfirmDisconnect(true)}>Disconnect my Apple account</button>
     </>}
@@ -287,7 +299,7 @@ export default function ICloudSetup({ profiles, canManageHousehold, onRefresh }:
       <p className="form-note">Subscriptions are read-only and manually refreshed. Use Sync now to check for source updates. Shared event copies are merged where their verified identifiers match.</p>
     </section>
     {confirmDisconnect && <div className="notice warning"><strong>Disconnect your iCloud account?</strong><p>This deletes only your saved encrypted Apple credentials. Other family connections and manual Hub events are kept.</p><label className="icloud-calendar-choice check-row"><input type="checkbox" checked={removeImported} disabled={busy} onChange={event => setRemoveImported(event.target.checked)}/><span>Also remove events supplied only by my connection</span></label><div className="actions"><button className="button danger" disabled={busy} onClick={() => void disconnect()}>{busyAction === "disconnect" ? "Disconnecting…" : "Disconnect my account & remove credentials"}</button><button className="button ghost" disabled={busy} onClick={() => setConfirmDisconnect(false)}>Keep connected</button></div></div>}
-    {busyAction && <p className="form-note" role="status">{busyAction === "connect" ? "Testing your credentials with Apple before saving anything…" : busyAction === "sync" ? "Saving your choices, then reading your selected Apple calendars…" : busyAction === "mapping" ? "Saving household calendar labels; private credentials are unchanged…" : busyAction.startsWith("subscription") ? "Checking or saving your private calendar subscription…" : "Removing your private connection…"}</p>}
+    {busyAction && <p className="form-note" role="status">{busyAction === "connect" ? "Testing your credentials with Apple before saving anything…" : busyAction === "sync" ? "Saving your choices, then reading your selected Apple calendars…" : busyAction === "discover" ? "Checking your saved Apple connection for new calendars…" : busyAction === "mapping" ? "Saving household calendar labels; private credentials are unchanged…" : busyAction.startsWith("subscription") ? "Checking or saving your private calendar subscription…" : "Removing your private connection…"}</p>}
     {(requestError || status?.error) && <p className="error-text" role="alert">{requestError || status?.error}</p>}
     {message && <p className="notice success" role="status">{message}</p>}
     <button className="panel-link" disabled={busy} onClick={() => { setRequestError(""); void readStatus().then(() => refreshRef.current()).catch(error => setRequestError(error.message)); }}>Refresh my saved connection status <Icon name="refresh" size={13}/></button>
