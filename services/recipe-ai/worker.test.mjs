@@ -52,7 +52,7 @@ test('success, provider failure and user cancellation release both application i
 
 test('reviewed recipe ingredient count accepts forty and rejects forty-one before inference',async()=>{
   let calls=0;
-  const e=env(async()=>{calls++;return{response:JSON.stringify({draft:{title:'Reviewed vegetable soup',servings:2,ingredients:[{name:'Vegetable'}],instructions:'Prepare the reviewed ingredients and simmer until cooked.'},missingIngredients:[],warnings:[]})};});
+  const e=env(async()=>{calls++;return{response:JSON.stringify({draft:{title:'Reviewed vegetable soup',servings:2,ingredients:[{name:'Vegetable',amount:200,unit:'g'}],instructions:'Prepare the reviewed ingredients and simmer until cooked.'},missingIngredients:[],warnings:[]})};});
   const rows=Array.from({length:40},(_,i)=>({name:'Reviewed ingredient '+i,uncertain:false}));
   assert.equal((await handleRequest(request({operation:'suggest',ingredients:rows,servings:2}),e)).status,200);
   assert.equal((await handleRequest(request({operation:'suggest',ingredients:[...rows,{name:'Forty first ingredient'}],servings:2}),e)).status,400);
@@ -87,4 +87,27 @@ test('structured response byte bounds, schemas and strict JSON reject malformed 
   for(const value of invalid){const r=await handleRequest(request(),env(async()=>({response:value})));assert.equal(r.status,502);}
   const cyclic={};cyclic.self=cyclic;
   assert.equal((await handleRequest(request(),env(async()=>({response:cyclic})))).status,502);
+});
+
+test('recipe quantities must be positive structured proposals while photo amounts remain optional',async()=>{
+  const recipeSchema=RECIPE_SCHEMA.properties.draft.properties.ingredients.items;
+  assert.ok(recipeSchema.required.includes('amount'));assert.equal(recipeSchema.properties.amount.exclusiveMinimum,0);
+  assert.equal(RECOGNITION_SCHEMA.properties.ingredients.items.required.includes('amount'),false);
+  const draft={title:'Lemon drink proposal',servings:2,ingredients:[{name:'Lemon',amount:1,unit:'count'}],instructions:'Squeeze the lemon and prepare the drink.',notes:'These proposed quantities should be reviewed.'};
+  for(const quantity of [undefined,0,-1,'1',100001]){
+    const invalid={...draft,ingredients:[{name:'Lemon',amount:quantity,unit:'count'}]};
+    const response=await handleRequest(request({operation:'suggest',ingredients:[{name:'Lemon',uncertain:false}],servings:2}),env(async()=>({response:{draft:invalid,missingIngredients:[],warnings:[]}})));
+    assert.equal(response.status,502);
+  }
+  const proposed=await handleRequest(request({operation:'suggest',ingredients:[{name:'Lemon',uncertain:false}],servings:2}),env(async()=>({response:{draft,missingIngredients:[],warnings:[]}})));
+  assert.equal(proposed.status,200);assert.equal((await proposed.json()).draft.ingredients[0].amount,1);
+});
+
+test('proposal preserves reviewed names and excludes reviewed items from missing ingredients',async()=>{
+  let prompt;
+  const draft={title:'Lemon and honey drink',servings:2,ingredients:[{name:'lemon',amount:1,unit:'count'},{name:'Honey',amount:1,unit:'tsp'}],instructions:'Squeeze the lemon and stir with the honey.',notes:'Proposed quantities; review before saving.'};
+  const response=await handleRequest(request({operation:'suggest',ingredients:[{name:'Lemon',uncertain:false}],servings:2}),env(async(_model,input)=>{prompt=input.messages[0].content;return{response:{draft,missingIngredients:[{name:' lemon ',uncertain:false},{name:'Honey',uncertain:false}],warnings:[]}};}));
+  assert.equal(response.status,200);const data=await response.json();assert.equal(data.draft.ingredients[0].name,'Lemon');assert.deepEqual(data.missingIngredients,[{name:'Honey',uncertain:false}]);
+  assert.ok(prompt.includes('EXACT reviewed ingredient names'));assert.ok(prompt.includes('a reviewed Lemon stays Lemon, never lemon juice'));
+  assert.ok(prompt.includes('NEW PROPOSED RECIPE QUANTITIES'));assert.ok(prompt.includes('Do not list any reviewed ingredient under missingIngredients'));
 });
