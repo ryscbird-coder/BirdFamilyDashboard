@@ -20,7 +20,7 @@ It returns `ingredients: [{name,amount?,unit?,uncertain,note?}]` and `warnings: 
 
 It returns a proposed `draft` containing normal recipe fields, `missingIngredients`, and `warnings`. It never saves recipes or meal plans. `identify` is an alias for `recognize`.
 
-The fixed model is `@cf/mistralai/mistral-small-3.1-24b-instruct`, using native Workers AI messages with a JPEG data URI and `guided_json`. There is no selectable provider, arbitrary model, remote image fetch, tool execution or URL proxy. The Site independently validates the result and requires editable ingredient/recipe review.
+The fixed model is `@cf/mistralai/mistral-small-3.1-24b-instruct`, using native Workers AI messages with a JPEG data URI and `response_format: {type: "json_schema", json_schema: schema}`. Cloudflare currently resolves that public model identifier to `@cf/mistralai/mistral-small-3.1-24b-v2`. The [current JSON Mode documentation](https://developers.cloudflare.com/workers-ai/features/json-mode/) and a controlled live text probe establish this format; the model schema endpoint still lists the older `guided_json` field, which the live endpoint ignored. Both structured-object and JSON-text responses are byte bounded and independently validated. There is no selectable provider, arbitrary model, remote image fetch, tool execution or URL proxy. The Site requires editable ingredient/recipe review.
 
 ## Privacy
 
