@@ -2,6 +2,7 @@
 
 import React from "react";
 import { CALENDAR_TIME_ZONE, eventDays, layoutCalendarWeeks, type CalendarItem } from "./calendar-layout";
+import { calendarSourceBadge, calendarSourceDescription } from "./calendar-provenance";
 import "./calendar-spans.css";
 
 export type CalendarGridProps<T extends CalendarItem> = {
@@ -21,7 +22,7 @@ const clock = new Intl.DateTimeFormat("en-GB", { timeZone: CALENDAR_TIME_ZONE, h
 function date(day: string) { return new Date(`${day}T12:00:00Z`); }
 function eventLabel(event: CalendarItem) {
   const days = eventDays(event)!;
-  const source = event.data.origin === "icloud" ? ", Apple Calendar, read-only" : "";
+  const source = event.data.origin === "icloud" ? `, ${calendarSourceDescription(event.data)}, read-only` : "";
   const state = event.data.status === "tentative" ? ", tentative" : "";
   const dateRange = days.multiDay ? `${shortDate.format(date(days.startDay))} to ${shortDate.format(date(days.endDay))}` : shortDate.format(date(days.startDay));
   return `${event.data.title}, ${dateRange}${event.data.allDay ? ", all day" : `, starts ${clock.format(new Date(event.data.startAt))}`}${source}${state}`;
@@ -43,14 +44,14 @@ export default function CalendarGrid<T extends CalendarItem>({ events, startDay,
         {week.segments.map(segment => <button key={segment.event.id} className={`calendar-span-event ${segment.continuesBefore ? "continues-before" : ""} ${segment.continuesAfter ? "continues-after" : ""} ${segment.event.data.status === "tentative" ? "tentative" : ""}`} style={{ gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`, gridRow: segment.lane + 2, "--event-colour": eventColour(segment.event) } as React.CSSProperties} onClick={() => onOpenEvent(segment.event)} aria-label={eventLabel(segment.event)} title={eventLabel(segment.event)}>
           {segment.continuesBefore && <span className="calendar-span-continuation" aria-hidden="true">‹</span>}
           <span className="calendar-span-title">{!segment.event.data.allDay && !segment.continuesBefore && <span className="calendar-span-start">{clock.format(new Date(segment.event.data.startAt))} · </span>}{segment.event.data.title}</span>
-          {segment.event.data.origin === "icloud" && <span className="calendar-span-source" aria-hidden="true">Apple</span>}
+          {segment.event.data.origin === "icloud" && <span className="calendar-span-source" aria-hidden="true">{calendarSourceBadge(segment.event.data)}</span>}
           {segment.continuesAfter && <span className="calendar-span-continuation" aria-hidden="true">›</span>}
         </button>)}
         {week.days.map((day, index) => <div key={day} className={`calendar-span-events ${month && day.slice(0, 7) !== month ? "outside" : ""}`} style={{ gridColumn: index + 1, gridRow: week.laneCount + 2 }}>
           {week.singleDayEvents.get(day)?.map(event => <button key={event.id} className="calendar-event" style={{ borderLeftColor: eventColour(event) }} onClick={() => onOpenEvent(event)} aria-label={eventLabel(event)}>
             <span>{event.data.allDay ? "All day" : clock.format(new Date(event.data.startAt))}</span>
             <strong>{event.data.title}</strong>
-            {event.data.origin === "icloud" && <small className="event-source-badge">Apple · read-only</small>}
+            {event.data.origin === "icloud" && <small className="event-source-badge">{calendarSourceBadge(event.data)} · read-only</small>}
             {event.data.status === "tentative" && <small>Tentative</small>}
           </button>)}
         </div>)}

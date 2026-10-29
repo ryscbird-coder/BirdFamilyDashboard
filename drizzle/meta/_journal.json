@@ -36,6 +36,13 @@
       "when": 1793283166792,
       "tag": "0004_long_swordsman",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793285698388,
+      "tag": "0005_hard_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

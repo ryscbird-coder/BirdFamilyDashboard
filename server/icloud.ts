@@ -1,3 +1,4 @@
+import { MAX_SELECTED_CALENDARS, CALENDAR_REPORT_CONCURRENCY } from '../shared/calendar-limits.ts';
 import ICAL from 'ical.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
@@ -5,7 +6,7 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 export interface ICloudCalendar { id: string; displayName: string; color?: string; }
 export interface ICloudEvent {
   providerId: string; uid: string; calendarId: string; calendarTitle: string;
-  /** Combine with an exact or explicitly linked calendar identity; never dedupe on this key alone. */
+  /** Logical UID/original occurrence identity; retain every contributing account/calendar snapshot. */
   occurrenceKey: string;
   providerSequence?: number; providerModifiedAt?: string;
   title: string; startAt: string; endAt: string; allDay: boolean;
@@ -22,7 +23,7 @@ type CalTime = InstanceType<typeof ICAL.Time>;
 type CalEvent = InstanceType<typeof ICAL.Event>;
 type CalComponent = InstanceType<typeof ICAL.Component>;
 const ROOT = 'https://caldav.icloud.com/';
-const MAX_BYTES = 2_000_000, MAX_CALENDARS = 50, MAX_SELECTED = 8, MAX_OBJECTS = 500, MAX_EVENTS = 1500;
+const MAX_BYTES = 2_000_000, MAX_CALENDARS = 50, MAX_OBJECTS = 500, MAX_EVENTS = 1500;
 const XML = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: false, processEntities: true });
 const asObject = (v: unknown): Xml => v && typeof v === 'object' && !Array.isArray(v) ? v as Xml : {};
 const list = (v: unknown): unknown[] => v === undefined || v === null ? [] : Array.isArray(v) ? v : [v];
@@ -51,7 +52,7 @@ function context(input: Credentials) {
   return async function request(raw: string, method: 'PROPFIND' | 'REPORT', body: string, depth: '0' | '1' = '0'): Promise<{ body: string; url: string }> {
     let url = validateAppleCalendarUrl(raw);
     for (let redirect = 0; redirect <= 2; redirect++) {
-      if (++calls > 14 || Date.now() >= deadline) throw new ICloudError('calendar_limit', 'The calendar request exceeded its safe limit. Try fewer selected calendars.');
+      if (++calls > (MAX_SELECTED_CALENDARS + 3) * 3 || Date.now() >= deadline) throw new ICloudError('calendar_limit', 'The calendar request exceeded its safe limit. Try fewer selected calendars.');
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), Math.min(12_000, deadline - Date.now()));
       try {
@@ -220,22 +221,27 @@ export async function parseCalendarData(ics: string, calendar: ICloudCalendar, w
 
 export async function fetchCalendarEvents(input: EventInput): Promise<{ events: ICloudEvent[]; authoritative: true }> {
   const from = Date.parse(input.windowStart), to = Date.parse(input.windowEnd);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 400 * 86_400_000 || !Array.isArray(input.calendars) || !input.calendars.length || input.calendars.length > MAX_SELECTED) throw new ICloudError('invalid_selection', 'Choose one to eight calendars and a valid import window, up to 400 days.', 400);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 400 * 86_400_000 || !Array.isArray(input.calendars) || !input.calendars.length || input.calendars.length > MAX_SELECTED_CALENDARS) throw new ICloudError('invalid_selection', `Choose one to ${MAX_SELECTED_CALENDARS} calendars and a valid import window, up to 400 days.`, 400);
   const budget: ExpansionBudget = { count: 0, deadline: Date.now() + 45_000 };
   const request = context(input); const available = await discover(request); const requested = [...new Set(input.calendars.map(c => validateAppleCalendarUrl(c.id)))];
   const selected = requested.map(id => available.find(c => c.id === id)); if (selected.some(c => !c)) throw new ICloudError('calendar_not_found', 'A selected calendar is no longer available. Test the connection and choose calendars again.', 409);
   const compact = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const query = `<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${compact(from)}" end="${compact(to)}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`;
   const output = new Map<string, ICloudEvent>(); let count = 0;
-  for (const calendar of selected as ICloudCalendar[]) {
-    const response = await request(calendar.id, 'REPORT', query, '1');
-    for (const row of responses(response.body)) {
-      if (++count > MAX_OBJECTS) throw new ICloudError('calendar_limit', 'Too many calendar objects were returned. Select fewer calendars.');
-      const eventUrl = validateAppleCalendarUrl(value(row.href), response.url); if (!eventUrl.startsWith(calendar.id.endsWith('/') ? calendar.id : calendar.id + '/')) throw new ICloudError('unexpected_calendar_object', 'Apple returned an event outside the selected calendar. Previous events have been retained.');
-      const p = properties(row, true); const data = value(p['calendar-data']); if (!data) throw new ICloudError('partial_calendar_response', 'Apple returned an incomplete event. Previous events have been retained.');
-      for (const event of await parseCalendarData(data, calendar, input.windowStart, input.windowEnd, budget)) output.set(event.providerId, event);
-      if (output.size > MAX_EVENTS) throw new ICloudError('calendar_limit', 'Too many calendar occurrences were returned. Select fewer calendars.');
-    }
+  const calendars = selected as ICloudCalendar[];
+  for (let offset = 0; offset < calendars.length; offset += CALENDAR_REPORT_CONCURRENCY) {
+    const results = await Promise.allSettled(calendars.slice(offset, offset + CALENDAR_REPORT_CONCURRENCY).map(async calendar => {
+      const response = await request(calendar.id, 'REPORT', query, '1');
+      for (const row of responses(response.body)) {
+        if (++count > MAX_OBJECTS) throw new ICloudError('calendar_limit', 'Too many calendar objects were returned. Select fewer calendars.');
+        const eventUrl = validateAppleCalendarUrl(value(row.href), response.url); if (!eventUrl.startsWith(calendar.id.endsWith('/') ? calendar.id : calendar.id + '/')) throw new ICloudError('unexpected_calendar_object', 'Apple returned an event outside the selected calendar. Previous events have been retained.');
+        const p = properties(row, true); const data = value(p['calendar-data']); if (!data) throw new ICloudError('partial_calendar_response', 'Apple returned an incomplete event. Previous events have been retained.');
+        for (const event of await parseCalendarData(data, calendar, input.windowStart, input.windowEnd, budget)) output.set(event.providerId, event);
+        if (output.size > MAX_EVENTS) throw new ICloudError('calendar_limit', 'Too many calendar occurrences were returned. Select fewer calendars.');
+      }
+    }));
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
   return { events: [...output.values()].sort((a, b) => a.startAt.localeCompare(b.startAt)), authoritative: true };
 }
