@@ -91,6 +91,12 @@ Read full shows the original saved ChatGPT report body verbatim, including the o
 
 Email/transport source nodes display actual background-job completion status, not a manual setup form. A partial job must say partial/needs action, and a successful check with no findings is still a successful check. Never replace missing or partial evidence with an invented “successfully organised” message.
 
+Paused workflows are retained in a collapsed group rather than the active source web. A current daily dashboard and an older paused weekly workflow remain separate records; do not resume the older schedule to change a display label. Observation timestamps alone never count as successful source checks. Receiving enabled is a preference, not proof that unattended delivery works.
+
+The dashboard report reader provides accessible section tabs, action cards and a Show all sections option using only sections present in the saved report. Its verified-summary label remains until the complete original arrives. The render adapter never stores rewritten report text or executes source HTML scripts. Markdown tables, task lists and strikethrough use individual extensions, avoiding the literal-autolink dependency's regex lookbehind that breaks older Safari parsing.
+
+Household reads have a 15-second fetch/body deadline, share concurrent refreshes and retain the last good state after failure. A post-save refresh invalidates older polls so stale responses cannot undo a displayed checkbox change. An application loading error is distinct from Safari's browser-level “server stopped responding”; successful Worker requests do not prove a physical iPad's DNS, TLS or sign-in path worked.
+
 
 ## Multi-day events and calendar ownership
 

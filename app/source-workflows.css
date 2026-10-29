@@ -1,0 +1,8 @@
+.paused-workflows { margin: 0 23px 23px; border-top: 1px solid var(--border, #d1ded5); padding-top: 10px; }
+.paused-workflows > summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-size: 12px; color: #5c7979; }
+.paused-workflows .source-row { gap: 10px; }
+.paused-workflows .source-row > span:nth-child(2) { flex: 1; }
+.paused-workflows .source-row[aria-pressed="true"] { color: #1d656d; font-weight: 550; }
+.source-mini .source-row { flex-wrap: wrap; }
+.source-mini .source-row .item-meta { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width:700px) { .paused-workflows { margin: 0 18px 18px; } }

@@ -1,8 +1,11 @@
-import React from "react";
+"use client";
+
+import React, { useId, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import remarkReportGfm from "./report-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import "./dashboard-report.css";
 
 /** Render-only presentation adapter. The original report string is never modified in storage. */
 function safeHref(value?: string): string | undefined {
@@ -111,11 +114,129 @@ const reportSchema = {
   },
 };
 
-export default function ReportContent({ body, originalUrl }: { body: string; originalUrl?: string }) {
+function nodeText(node: any): string {
+  return node?.type === "text" ? node.value : (node?.children || []).map(nodeText).join("");
+}
+
+/** Recover report structure before throwing away the saved page's inactive controls. */
+function rememberDashboardStructure() {
+  return (tree: any) => {
+    const labels = new Map<string, string>();
+    const visit = (node: any, visitor: (node: any) => void) => {
+      visitor(node);
+      for (const child of node.children || []) visit(child, visitor);
+    };
+    visit(tree, node => {
+      if (node.type !== "element") return;
+      const props = node.properties || {};
+      if (props.role === "tab" && props.ariaControls) labels.set(String(props.ariaControls), nodeText(node).trim());
+    });
+    visit(tree, node => {
+      if (node.type !== "element") return;
+      const props = node.properties || {};
+      const classes = Array.isArray(props.className) ? props.className : String(props.className || "").split(/\s+/);
+      const data = node.data || (node.data = {});
+      if (props.role === "tabpanel") {
+        data.dashboardPanel = true;
+        data.dashboardLabel = labels.get(String(props.id || ""));
+      }
+      // Only these presentation hints survive. Source CSS and handlers never do.
+      if (classes.includes("viz-grid")) data.dashboardStyle = "dashboard-report-stats";
+      else if (classes.includes("viz-stat")) data.dashboardStyle = "dashboard-report-stat";
+      else if (classes.includes("viz-stat-value")) data.dashboardStyle = "dashboard-report-stat-value";
+      else if (classes.includes("text-muted")) data.dashboardStyle = "dashboard-report-muted";
+    });
+  };
+}
+
+/** Presentation-only heading recognition for existing plain-text saved summaries. */
+export function dashboardMarkdown(original: string, originalUrl?: string): string {
+  const markdown = reportMarkdown(original, originalUrl);
+  if (/<(?:article|main|section|table|pre|h[1-6])[\s>]/i.test(markdown)) return markdown;
+  let fence: { marker: string; length: number } | null = null;
+  return markdown.split("\n").map((line, index, lines) => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (marker && marker[1][0] === fence.marker && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+      return line;
+    }
+    if (marker) { fence = { marker: marker[1][0], length: marker[1].length }; return line; }
+    const text = line.trim();
+    const startsBlock = index === 0 || !lines[index - 1].trim();
+    const uppercaseTitle = text.length >= 6 && text.length <= 160 && /[A-Z]/.test(text) && /^[A-Z0-9\s&—–:()\/,.'’+\-]+$/.test(text);
+    if (startsBlock && uppercaseTitle) return `## ${line}`;
+    if (/^\s*•\s+/.test(line)) return line.replace(/^(\s*)•\s+/, "$1- ");
+    if (/^\s*□\s+/.test(line)) return line.replace(/^(\s*)/, "$1- ");
+    if (startsBlock && text.length < 80 && /^[A-Za-z][A-Za-z0-9 &'’–—-]+$/.test(text) && /^\s*□\s+/.test(lines[index + 1] || "")) return `### ${line}`;
+    return line;
+  }).join("\n");
+}
+
+/** Build fresh UI from sanitised content; never reactivate the original page's scripts. */
+function groupDashboardSections() {
+  return (tree: any) => {
+    const group = (parent: any) => {
+      if (!Array.isArray(parent.children)) return;
+      const children = parent.children;
+      const originalPanels = children.filter((node: any) => node.data?.dashboardPanel);
+      const headingLevel = ["h2", "h1", "h3"].find(tag => children.filter((node: any) => node.tagName === tag).length >= 2);
+      const semanticSections = children.filter((node: any) => ["section", "article"].includes(node.tagName) && (node.children || []).some((child: any) => /^h[1-4]$/.test(child.tagName)));
+      const isBoundary = originalPanels.length >= 2
+        ? (node: any) => !!node.data?.dashboardPanel
+        : headingLevel ? (node: any) => node.tagName === headingLevel
+        : semanticSections.length >= 2 ? (node: any) => semanticSections.includes(node) : undefined;
+      if (isBoundary) {
+        const first = children.findIndex(isBoundary);
+        const panels: any[] = [];
+        for (const child of children.slice(first)) {
+          if (isBoundary(child)) {
+            const heading = /^h[1-6]$/.test(child.tagName) ? child : (child.children || []).find((node: any) => /^h[1-6]$/.test(node.tagName));
+            const title = child.data?.dashboardLabel || nodeText(heading).trim().split(/\s[—–]\s/)[0];
+            panels.push({ type: "element", tagName: "section", properties: {}, children: [child], data: { dashboardTitle: title } });
+          } else if (panels.length) panels[panels.length - 1].children.push(child);
+        }
+        parent.children = [...children.slice(0, first), { type: "element", tagName: "div", properties: {}, data: { dashboardTabs: true, dashboardLabels: panels.map(panel => panel.data.dashboardTitle) }, children: panels }];
+        return;
+      }
+      for (const child of children) if (child.type === "element" && ["article", "main", "div", "section"].includes(child.tagName)) group(child);
+    };
+    group(tree);
+  };
+}
+
+export function DashboardTabs({ labels, children }: { labels: string[]; children: React.ReactNode }) {
+  const [active, setActive] = useState(0);
+  const [showAll, setShowAll] = useState(false);
+  const id = `dashboard-${useId().replace(/[^a-z0-9_-]/gi, "")}`;
+  const panels = React.Children.toArray(children);
+  const select = (index: number) => { setActive(index); setShowAll(false); };
+  const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number;
+    if (event.key === "ArrowRight") next = (index + 1) % labels.length;
+    else if (event.key === "ArrowLeft") next = (index + labels.length - 1) % labels.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = labels.length - 1;
+    else return;
+    event.preventDefault();
+    select(next);
+    (event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next])?.focus();
+  };
+  return <div className="dashboard-report-sections">
+    <div className="dashboard-report-navigation"><div className="dashboard-report-tabs" role="tablist" aria-label="Dashboard sections">{labels.map((label, index) => <button key={index} type="button" role="tab" id={`${id}-tab-${index}`} aria-controls={`${id}-panel-${index}`} aria-selected={active === index} tabIndex={active === index ? 0 : -1} onClick={() => select(index)} onKeyDown={event => onKeyDown(event, index)}>{label}</button>)}</div><button type="button" className="dashboard-report-show-all" aria-pressed={showAll} onClick={() => setShowAll(value => !value)}>{showAll ? "Show one section" : "Show all sections"}</button></div>
+    <div className="dashboard-report-panels">{panels.map((panel, index) => <div key={index} className="dashboard-report-panel" id={`${id}-panel-${index}`} role="tabpanel" aria-labelledby={`${id}-tab-${index}`} tabIndex={0} hidden={!showAll && active !== index}>{panel}</div>)}</div>
+  </div>;
+}
+
+export default function ReportContent({ body, originalUrl, presentation = "document" }: { body: string; originalUrl?: string; presentation?: "document" | "dashboard" }) {
   if (!body) return <p className="report-empty">No original report text is available for this saved update.</p>;
-  return <div className="report-content"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, revealOriginalReport, [rehypeSanitize, reportSchema]]} urlTransform={url => safeHref(url) || ""} components={{
+  const dashboard = presentation === "dashboard";
+  return <div className={`report-content${dashboard ? " dashboard-report" : ""}`}><ReactMarkdown remarkPlugins={[remarkReportGfm]} rehypePlugins={dashboard ? [rehypeRaw, rememberDashboardStructure, revealOriginalReport, [rehypeSanitize, reportSchema], groupDashboardSections] : [rehypeRaw, revealOriginalReport, [rehypeSanitize, reportSchema]]} urlTransform={url => safeHref(url) || ""} components={{
+    div: ({ node, children, ...props }) => {
+      const data = node?.data as { dashboardTabs?: boolean; dashboardLabels?: string[]; dashboardStyle?: string } | undefined;
+      return data?.dashboardTabs ? <DashboardTabs labels={data.dashboardLabels || []}>{children}</DashboardTabs> : <div {...props} className={dashboard ? data?.dashboardStyle : undefined}>{children}</div>;
+    },
     a: ({ node: _node, href, children, ...props }) => href ? <a {...props} href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noreferrer noopener">{children}</a> : <span>{children}</span>,
     table: ({ node: _node, ...props }) => <div className="report-table-scroll" style={{ overflowX: "auto" }}><table {...props}/></div>,
     img: ({ node: _node, src, alt, ...props }) => typeof src === "string" && safeHref(src) ? <img {...props} src={src} alt={alt || "Image from the original report"} loading="lazy" referrerPolicy="no-referrer" style={{ maxWidth: "100%", height: "auto" }}/> : <span>{alt || "Image available in the original report"}</span>,
-  }}>{reportMarkdown(body, originalUrl)}</ReactMarkdown></div>;
+  }}>{dashboard ? dashboardMarkdown(body, originalUrl) : reportMarkdown(body, originalUrl)}</ReactMarkdown></div>;
 }
