@@ -136,3 +136,34 @@ test('finding new iCloud calendars uses stored credentials and preserves saved a
   host.field('Last-known family calendar').props.onChange({target:{checked:false}});assert.equal(host.field('Last-known family calendar').props.disabled,true,'an unavailable calendar cannot be newly selected');
  }finally{host.close();}
 });
+
+test('hourly refresh copy requires the confirmed own schedule and never replaces provider success or manual controls',async()=>{
+ const scenarios=[
+  {refreshMode:'hourly',enabled:true,expected:'checked automatically every hour'},
+  {refreshMode:'manual',enabled:false,expected:'Automatic hourly refresh is not configured'},
+  {refreshMode:undefined,enabled:undefined,expected:'Automatic refresh status is not available'},
+  {refreshMode:'hourly',enabled:false,expected:'Automatic refresh status is not available'},
+ ];
+ for(const scenario of scenarios){
+  const status=defaultStatus();status.configured=true;status.status='ready';status.username='fixture@example.test';status.refreshMode=scenario.refreshMode;
+  if(scenario.enabled!==undefined)status.autoRefresh={enabled:scenario.enabled,scope:'self',intervalMinutes:60,verifiedAt:'2026-10-29T12:00:00Z'};
+  status.lastSuccess='2026-10-28T11:00:00Z';status.calendars=[{id:'calendar_saved',displayName:'Saved calendar',calendarKey:'key_saved',personId:null,sharedCalendarId:'shared_saved',version:1}];status.selectedCalendarIds=['calendar_saved'];status.subscriptions=[subscription()];
+  const host=await createHost(status);try{
+   assert.ok(text(host.nodes()).includes(scenario.expected));
+   if(!scenario.enabled)assert.ok(!text(host.nodes()).includes('checked automatically every hour'));
+   assert.equal(host.button('Save choices & sync my calendars').props.disabled,false);
+   assert.equal(host.button('Sync now').props.disabled,false);
+   assert.ok(host.nodes().some(node=>node.type==='dd'&&/28 Oct.*11:00/.test(text(node))),'provider success must keep its actual older date');
+   host.button('Refresh my saved connection status ').props.onClick();await host.settle();
+   assert.ok(host.calls.every(call=>call.method==='GET'),'reading schedule status must not trigger any sync or schedule writes');
+   assert.equal(host.state.lastSuccess,'2026-10-28T11:00:00Z');assert.equal(host.state.subscriptions[0].lastSuccess,'2026-10-29T11:00:00Z');
+  }finally{host.close();}
+ }
+ const status=defaultStatus();status.configured=true;status.status='configured';status.refreshMode='hourly';status.autoRefresh={enabled:true,scope:'self',intervalMinutes:60,verifiedAt:'2026-10-29T12:00:00Z'};status.subscriptions=[{...subscription(),lastSuccess:undefined}];
+ const host=await createHost(status);try{
+  assert.ok(text(host.nodes()).includes('checked automatically every hour'));
+  assert.ok(text(host.nodes()).includes('No successful calendar sync yet'));
+  assert.ok(text(host.nodes()).includes('No successful refresh has been recorded yet.'));
+  assert.ok(!text(host.nodes()).includes('last verified calendar sync is available'));
+ }finally{host.close();}
+});
