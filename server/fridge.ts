@@ -168,8 +168,8 @@ export async function handleFridgeRoute(request: Request, env: HubBindings, path
       if ((draft.ingredients as Data[]).some(item => typeof item.amount !== 'number' || !Number.isFinite(item.amount) || item.amount <= 0)) throw invalidResult();
       const normalized = (name: unknown) => String(name).trim().toLowerCase().replace(/\s+/g, ' ');
       const reviewedNames = new Set(reviewed.map(item => normalized(item.name)));
-      const missingIngredients = ingredients(result.missingIngredients ?? []).filter(item => !reviewedNames.has(normalized(item.name)));
-      const missingNames = new Set(missingIngredients.map(item => normalized(item.name)));
+      const missingIngredients: Data[] = [];
+      const missingNames = new Set<string>();
       for (const item of draft.ingredients as Data[]) {
         const name = normalized(item.name);
         if (!reviewedNames.has(name) && !missingNames.has(name)) {
