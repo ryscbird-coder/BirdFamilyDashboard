@@ -316,3 +316,43 @@ test('failed provider reads can record honest source health above the shared rec
  assert.ok(failed.error&&failed.subscriptions[0].error);
  assert.deepEqual(await DB.prepare('SELECT * FROM hub_records ORDER BY id').all(),records);
 });
+
+function recipePhotoBucket(){const files=new Map();let puts=0;return{files,get puts(){return puts;},async head(key){const bytes=files.get(key);return bytes?{key,size:bytes.length}:null;},async put(key,data){puts++;files.set(key,new Uint8Array(data));return{key};},async get(key){const data=files.get(key);if(!data)return null;return{body:new Response(data).body,arrayBuffer:async()=>data.slice().buffer};},async delete(key){files.delete(key);}};}
+const tinyRecipeWebp=()=>Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA','base64');
+
+test('dish thumbnails enforce owner writes, private household reads and compact metadata while deduplicating objects',async()=>{
+ const bucket=recipePhotoBucket(),{call,env,DB}=setup({BUCKET:bucket});const one=(await call('/api/items','POST',{kind:'recipe',data:recipe})).data.record,two=(await call('/api/items','POST',{kind:'recipe',data:{...recipe,title:'Another soup'}})).data.record;
+ const payload={recipeId:one.id,version:one.version,imageBase64:tinyRecipeWebp().toString('base64')};
+ assert.equal((await call('/api/recipes/photos-import','POST',{entries:[payload]},{anonymous:true})).status,401);
+ await call('/api/members','POST',{userId:'family-photo-reader',displayName:'Family'});
+ assert.equal((await call('/api/recipes/photos-import','POST',{entries:[payload]},{user:'family-photo-reader'})).status,403);
+ const first=await call('/api/recipes/photos-import','POST',{entries:[payload,{...payload,recipeId:two.id}]});assert.equal(first.status,200);assert.equal(first.data.results.length,2);assert.equal(bucket.puts,1);assert.equal(first.data.results[0].photo.bytes,42);
+ const again=await call('/api/recipes/photos-import','POST',{entries:[payload]});assert.equal(again.data.results[0].unchanged,true);assert.equal(bucket.puts,1);
+ const state=(await call('/api/state')).data;const photo=state.records.find(r=>r.id===one.id).data.photo;assert.equal(photo.width,1);assert.ok(photo.url.startsWith('/api/recipes/'+one.id+'/photo?v='));assert.equal(JSON.stringify(state).includes(payload.imageBase64),false);assert.equal((await call('/api/items/'+one.id)).data.record.data.photo.sha256,photo.sha256);
+ const raw=async(user)=>handleApi(new Request('https://hub.test'+photo.url,{headers:user?{'oai-authenticated-user-id':user}:{}}),env);assert.equal((await raw()).status,401);assert.equal((await raw('outsider')).status,403);const image=await raw('family-photo-reader');assert.equal(image.status,200);assert.equal(image.headers.get('Cache-Control'),'private, max-age=3600');assert.equal(image.headers.get('Content-Type'),'image/webp');assert.equal((await image.arrayBuffer()).byteLength,42);
+ assert.equal((await call('/api/recipes/photos-status',undefined,undefined,{user:'family-photo-reader'})).status,403);const status=await call('/api/recipes/photos-status');assert.equal(status.data.photoCount,2);assert.equal(status.data.objectCount,1);assert.equal(status.data.bytes,42);
+ assert.equal((await DB.prepare('SELECT data FROM hub_records WHERE id=?').bind(one.id).first()).data.includes('imageBase64'),false);
+});
+
+test('thumbnail image validation bounds dimensions, batch bytes, metadata and versions before changing mappings',async()=>{
+ const{validateRecipePhoto}=await import('../server/recipe-photos.ts');const bucket=recipePhotoBucket(),{call,DB}=setup({BUCKET:bucket});const row=(await call('/api/items','POST',{kind:'recipe',data:recipe})).data.record;
+ const payload={recipeId:row.id,version:1,imageBase64:tinyRecipeWebp().toString('base64')};const path='/api/recipes/photos-import';
+ assert.equal((await call(path,'POST',{entries:[{...payload,version:2}]})).status,409);assert.equal(bucket.puts,0);
+ assert.equal((await call(path,'POST',{entries:Array.from({length:21},()=>payload)})).status,400);
+ const wide=tinyRecipeWebp();wide.writeUInt16LE(481,26);assert.throws(()=>validateRecipePhoto(wide),e=>e.code==='recipe_photo_too_large');
+ const metadata=Buffer.concat([tinyRecipeWebp(),Buffer.from('EXIF\x02\x00\x00\x00xx','binary')]);metadata.writeUInt32LE(metadata.length-8,4);assert.throws(()=>validateRecipePhoto(metadata),e=>e.code==='invalid_recipe_photo');
+ const large=Buffer.alloc(20_000);tinyRecipeWebp().copy(large);large.writeUInt32LE(large.length-8,4);large.writeUInt32LE(large.length-20,16);const batch=Array.from({length:7},()=>({...payload,imageBase64:large.toString('base64')}));assert.equal((await call(path,'POST',{entries:batch})).status,413);assert.equal(bucket.puts,0);assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_recipe_photos').first()).n,0);
+ assert.equal((await call(path,'POST',{entries:[payload]})).status,200);const changed=tinyRecipeWebp();changed[changed.length-1]=1;const next={...payload,imageBase64:changed.toString('base64')};assert.equal((await call(path,'POST',{entries:[next]})).status,409);assert.equal(bucket.puts,1);assert.equal((await call(path,'POST',{entries:[{...next,photoVersion:1}]})).status,200);assert.equal((await call('/api/items/'+row.id)).data.record.version,1);
+});
+
+test('temporary thumbnail migration grant is disabled by default, requires existing owner and only changes existing recipe photos',async()=>{
+ const token='synthetic-temporary-photo-grant-1234567890';const bucket=recipePhotoBucket(),fresh=setup({BUCKET:bucket,HUB_RECIPE_PHOTO_IMPORT_TOKEN:token});
+ const request=(env,data,key=token)=>handleApi(new Request('https://hub.test/api/recipes/photos-migration',{method:'POST',headers:{'Content-Type':'application/json','X-Bird-Recipe-Import':key},body:JSON.stringify(data)}),env);
+ assert.equal((await request(fresh.env,{entries:[]})).status,403);assert.equal((await fresh.DB.prepare('SELECT COUNT(*) AS n FROM hub_owner').first()).n,0);
+ const{call,env}=setup({BUCKET:bucket});const recipeRow=(await call('/api/items','POST',{kind:'recipe',data:recipe})).data.record;const payload={recipeId:recipeRow.id,version:1,imageBase64:tinyRecipeWebp().toString('base64')};
+ assert.equal((await request(env,{entries:[payload]})).status,404);env.HUB_RECIPE_PHOTO_IMPORT_TOKEN=token;assert.equal((await request(env,{entries:[payload]},'wrong-grant')).status,403);
+ assert.equal((await request(env,{entries:[{...payload,recipeId:'does_not_exist'}]})).status,404);
+ const r=await request(env,{entries:[payload]});assert.equal(r.status,200);const receipts=await r.json();assert.equal(receipts.results[0].verified,true);assert.equal(receipts.results[0].photo.bytes,42);
+ const verified=await request(env,{verify:[recipeRow.id]});assert.equal((await verified.json()).results[0].sha256,receipts.results[0].photo.sha256);
+ delete env.HUB_RECIPE_PHOTO_IMPORT_TOKEN;assert.equal((await request(env,{verify:[recipeRow.id]})).status,404);
+});

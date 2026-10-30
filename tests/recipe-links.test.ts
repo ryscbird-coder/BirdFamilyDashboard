@@ -2,6 +2,7 @@ import {strict as assert} from 'node:assert';
 import {test} from 'node:test';
 import {parseIngredient,quantity,methodSteps} from '../app/recipe-utils.ts';
 import {recipeFromHTML,recipeURL,importRecipeLink} from '../server/recipe-links.ts';
+import {recipePhotoSource,validateRecipePhotoSourceUrl} from '../server/recipe-photo-source.ts';
 test('fractional ingredient quantities scale without losing names or units',()=>{
  assert.deepEqual(parseIngredient('1½ tbsp olive oil'),{amount:1.5,unit:'tbsp',name:'olive oil'});
  assert.deepEqual(parseIngredient('½ red onion'),{amount:.5,name:'red onion'});
@@ -20,3 +21,10 @@ test('recipe fetch refuses private URLs and redirects outside supported sites',a
 });
 
 test('printed ingredient ranges retain both endpoints when scaling',()=>{const ingredient=parseIngredient('1/2–1 tsp salt');assert.deepEqual(ingredient,{name:'salt',unit:'tsp',amount:.5,amountMax:1});assert.equal(quantity(ingredient,4,2),'1–2 tsp');});
+
+test('available publisher dish pictures are retained as compact image links and unsafe sources are excluded',()=>{
+ const draft=recipeFromHTML('<script type="application/ld+json">'+JSON.stringify({'@type':'Recipe',name:'A dish',recipeIngredient:['200g rice'],image:{'@type':'ImageObject',url:'https://images.immediate.co.uk/production/dish.jpg'}})+'</script>','https://www.bbcgoodfood.com/recipes/dish');
+ const image=new URL(draft.photoSourceUrl!);assert.equal(image.searchParams.get('resize'),'480,320');assert.equal(image.searchParams.get('quality'),'60');
+ for(const url of ['data:image/png;base64,abc','http://images.immediate.co.uk/a','https://127.0.0.1/a','https://images.immediate.co.uk.evil.test/a','https://user@images.immediate.co.uk/a'])assert.throws(()=>validateRecipePhotoSourceUrl(url));
+ assert.equal(recipePhotoSource(['https://evil.test/ad.jpg',{url:'https://img.hellofresh.com/dish.jpg'}]),'https://img.hellofresh.com/dish.jpg');assert.equal(recipePhotoSource('https://evil.test/ad.jpg'),undefined);
+});

@@ -31,7 +31,7 @@ For a built Worker HTTP check, `npm start -- --port 8787`, then `node scripts/sm
 
 ## Deployment
 
-Keep `.openai/hosting.json` project_id unchanged. The single Site identity was created after repository and existing Site inspection. `d1: "DB"`; R2 is disabled because images are never stored. `capabilities: ["mcp"]` exposes fixed private tools.
+Keep `.openai/hosting.json` project_id unchanged. The single Site identity was created after repository and existing Site inspection. `d1: "DB"`; `r2: "BUCKET"` holds private, content-addressed compact dish thumbnails only. `capabilities: ["mcp"]` exposes fixed private tools.
 
 Read the current Sites skill before publishing. Retain its source access in memory and pass it on hidden stdin only. Keep the selected GitHub origin and Sites-managed source remote on the same exact commit. `scripts/push-source.mjs` accepts the native credential JSON on stdin and uses only temporary process authentication. It writes no token files. Do not print tokens or put them in shell arguments.
 
@@ -112,9 +112,9 @@ The original import predates stored UID/recurrence identities. Its records and s
 
 ## Cookbook links and recipe imports
 
-Recipe detail uses numbered, tickable steps beside portion-scaled ingredients. Direct shopping imports retain the existing server-side idempotency and cupboard exclusions. `yieldUnit: batches` supports clippings that do not specify a serving yield without inventing a person count. Pack weights that are absent remain explicit pack units. Source photos and dish images are not stored.
+Recipe detail uses numbered, tickable steps beside portion-scaled ingredients. Direct shopping imports retain the existing server-side idempotency and cupboard exclusions. `yieldUnit: batches` supports clippings that do not specify a serving yield without inventing a person count. Pack weights that are absent remain explicit pack units. Full source photos are not stored. Available dish pictures use deduplicated WebP thumbnails (max480px, target25KB, hard40KB), served only to household members.
 
-`POST /api/recipes/import-link` reads bounded JSON-LD recipe text from allowlisted HTTPS BBC Good Food/Good Food, HelloFresh and Gousto pages, with checked redirects and a timeout. It returns a review draft; it never silently saves or imports arbitrary URLs. Imported recipes retain source attribution. Publisher blocking and pages without recipe metadata produce a manual-entry fallback. Fractional quantities are parsed for scaling, and unrecognised amounts remain review text.
+`POST /api/recipes/import-link` reads bounded JSON-LD recipe text and an available publisher dish-image link from allowlisted HTTPS BBC Good Food/Good Food, HelloFresh and Gousto pages, with checked redirects and a timeout. It returns a review draft; it never silently saves or imports arbitrary URLs. Imported recipes retain source attribution. Publisher blocking and pages without recipe metadata produce a manual-entry fallback. Fractional quantities are parsed for scaling, and unrecognised amounts remain review text.
 
 Optional secret `HUB_RECIPE_IMPORT_JSON` accepts a one-time owner-authorized `{batchId, recipes: [{id, data}]}` envelope. It uses the existing transactional bootstrap marker and insert-only IDs, never overwrites household edits, and keeps private recipe content outside Git.
 
@@ -166,3 +166,9 @@ Fridge tests cover authenticated membership/origin, malformed/oversized JPEGs, t
 Recipe indexes return compact text metadata and ingredient counts; a signed-in household member opens a full recipe through `GET /api/items/:id`. The cookbook progressively renders 24 cards at a time, preserving the existing serving, meal-snapshot and shopping-import behavior without preloading every method. `collection` retains the book or import source. `countryCodes` contains explicit uppercase ISO alpha-2 culinary associations; uncertain origin stays unassigned.
 
 A large owner-authorized migration may be staged as gzip-compressed base64 text across secret runtime values `HUB_RECIPE_CATALOG_01` through `HUB_RECIPE_CATALOG_64`, with `HUB_RECIPE_CATALOG_PARTS` declaring the exact count. Decompression is bounded at 8 MB and 10,000 entries. Owner API reads import at most two 40-recipe chunks per request through the existing transactional bootstrap markers. Completed chunks are never replayed, so deleted recipes stay deleted and edits survive later reads. Imported content, video frames and cookbook originals remain outside Git. This is an explicit one-time migration, not an external schedule.
+
+## Dish-thumbnail imports and cleanup
+
+Every recipe batch includes available source dish pictures. Keep original user files in place, extract only the dish image, strip metadata and encode WebP without upscaling (max480px; target25KB, hard40KB). Match photos to the exact recipe and keep missing photos empty. Content-addressed private R2 objects deduplicate identical pictures across recipes. D1 stores only references and dimensions. Lists lazy-load pictures and recipes with no picture keep their existing fallback. Publisher recipe-link imports retain an allowlisted small dish-image URL; no external scripts or source pages are embedded. Camera/OCR and fridge captures remain transient and are never retained as thumbnails automatically.
+
+For an owner-authorized bulk backfill, configure the temporary `HUB_RECIPE_PHOTO_IMPORT_TOKEN` server secret, upload only validated thumbnails to the scoped migration endpoint, and verify stored-object hashes and recipe mapping receipts. Remove the temporary secret after verification. Never commit import data or images. Delete redundant task-specific local copies, extracted frames, generated archives and ChatGPT transfer artifacts only after successful text/photo readback; preserve the website originals, user's source files, application source and dependencies. Future batches use this same workflow and duplicate checks before import.
