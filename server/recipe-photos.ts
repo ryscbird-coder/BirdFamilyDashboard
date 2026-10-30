@@ -83,6 +83,11 @@ export async function handleRecipePhotoMigration(request:Request,env:RecipePhoto
   return json({results:rows.results.map(row=>({recipeId:row.recipe_id,...recipePhotoMetadata(row)}))});
  }
  if(!Array.isArray(input.entries)||input.entries.length<1||input.entries.length>20)throw new ApiError(400,'invalid_input','Import one to twenty thumbnails at a time.');
- validateBatch(input.entries);const results=[];for(const entry of input.entries){const saved=await savePhoto(env,entry);const file=await env.BUCKET!.get('recipe-thumbnails/'+saved.photo.sha256+'.webp');if(!file)throw new ApiError(503,'thumbnail_verification_failed','A stored thumbnail could not be verified.');const bytes=await file.arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==saved.photo.sha256||bytes.byteLength!==saved.photo.bytes)throw new ApiError(503,'thumbnail_verification_failed','A stored thumbnail could not be verified.');results.push({...saved,verified:true});}
+ validateBatch(input.entries);
+ // Distinct recipe writes are independent. Four workers preserve input order while
+ // bounding simultaneous R2/D1 work; all started work settles before an error returns.
+ const entries=input.entries;const results:Array<Awaited<ReturnType<typeof savePhoto>>&{verified:true}>=new Array(entries.length);let cursor=0;let failed=false;let failure:unknown;
+ const worker=async()=>{while(!failed){const index=cursor++;if(index>=entries.length)return;try{const saved=await savePhoto(env,entries[index]);const file=await env.BUCKET!.get('recipe-thumbnails/'+saved.photo.sha256+'.webp');if(!file)throw new ApiError(503,'thumbnail_verification_failed','A stored thumbnail could not be verified.');const bytes=await file.arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==saved.photo.sha256||bytes.byteLength!==saved.photo.bytes)throw new ApiError(503,'thumbnail_verification_failed','A stored thumbnail could not be verified.');results[index]={...saved,verified:true};}catch(error){if(!failed){failed=true;failure=error;}}}};
+ await Promise.all(Array.from({length:Math.min(4,entries.length)},worker));if(failed)throw failure;
  return json({results});
 }

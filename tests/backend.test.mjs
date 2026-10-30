@@ -356,3 +356,12 @@ test('temporary thumbnail migration grant is disabled by default, requires exist
  const verified=await request(env,{verify:[recipeRow.id]});assert.equal((await verified.json()).results[0].sha256,receipts.results[0].photo.sha256);
  delete env.HUB_RECIPE_PHOTO_IMPORT_TOKEN;assert.equal((await request(env,{verify:[recipeRow.id]})).status,404);
 });
+
+test('migration processes distinct recipes with at most four concurrent workers, stable receipt order and shared-object replay safety',async()=>{
+ const bucket=recipePhotoBucket();let active=0,maxActive=0;const get=bucket.get.bind(bucket);bucket.get=async key=>{active++;maxActive=Math.max(maxActive,active);await new Promise(resolve=>setImmediate(resolve));const file=await get(key);return file?{...file,arrayBuffer:async()=>{try{await new Promise(resolve=>setImmediate(resolve));return await file.arrayBuffer();}finally{active--;}}}:null;};
+ const token='synthetic-bounded-thumbnail-grant-123456';const {call,env,DB}=setup({BUCKET:bucket,HUB_RECIPE_PHOTO_IMPORT_TOKEN:token});const rows=[];for(let i=0;i<9;i++)rows.push((await call('/api/items','POST',{kind:'recipe',data:{...recipe,title:'Concurrent thumbnail '+i}})).data.record);
+ const entries=rows.map(row=>({recipeId:row.id,version:row.version,imageBase64:tinyRecipeWebp().toString('base64')}));
+ const invoke=()=>handleApi(new Request('https://hub.test/api/recipes/photos-migration',{method:'POST',headers:{'Content-Type':'application/json','X-Bird-Recipe-Import':token},body:JSON.stringify({entries})}),env);
+ const first=await invoke();assert.equal(first.status,200);const initial=await first.json();assert.deepEqual(initial.results.map(r=>r.recipeId),rows.map(r=>r.id));assert.ok(initial.results.every(r=>r.verified));assert.ok(maxActive>1);assert.ok(maxActive<=4);assert.equal(active,0);assert.equal(bucket.files.size,1);assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_recipe_photos').first()).n,rows.length);
+ const second=await invoke();assert.equal(second.status,200);const replay=await second.json();assert.deepEqual(replay.results.map(r=>r.recipeId),rows.map(r=>r.id));assert.ok(replay.results.every(r=>r.unchanged&&r.verified));assert.equal(bucket.files.size,1);assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_recipe_photos').first()).n,rows.length);
+});
