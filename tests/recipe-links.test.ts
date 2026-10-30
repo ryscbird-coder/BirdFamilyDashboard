@@ -18,3 +18,5 @@ test('recipe fetch refuses private URLs and redirects outside supported sites',a
  for(const url of ['http://www.bbcgoodfood.com/a','https://127.0.0.1/a','https://www.bbcgoodfood.com.evil.test/a','https://www.bbcgoodfood.com:444/a','https://user@www.bbcgoodfood.com/a'])assert.throws(()=>recipeURL(url));
  await assert.rejects(()=>importRecipeLink('https://www.bbcgoodfood.com/recipes/soup',async()=>new Response(null,{status:302,headers:{location:'http://169.254.169.254/'}})));
 });
+
+test('printed ingredient ranges retain both endpoints when scaling',()=>{const ingredient=parseIngredient('1/2–1 tsp salt');assert.deepEqual(ingredient,{name:'salt',unit:'tsp',amount:.5,amountMax:1});assert.equal(quantity(ingredient,4,2),'1–2 tsp');});
