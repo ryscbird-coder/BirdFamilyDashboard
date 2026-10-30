@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { handleApi } from '../server/api.ts';
 import { handleMcp } from '../server/mcp.ts';
 import { freshness, nextReminderDue, scaledIngredients } from '../server/domain.ts';
+import { MAX_HOUSEHOLD_RECORDS } from '../shared/record-limits.ts';
 class Database {
  constructor(){this.db=new DatabaseSync(':memory:');for(const f of readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())this.db.exec(readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));}
  prepare(sql){return new Statement(this.db,sql);}
@@ -224,3 +225,94 @@ test('catalog completion counts only exact chunk markers despite overlapping bat
 test('catalog helper cannot import or mark completion for an actor other than the owner',async()=>{const{gzipSync}=await import('node:zlib');const{applyRecipeCatalog}=await import('../server/recipe-catalog-import.ts');const{DB,call}=setup();await call('/api/state');const env={HUB_RECIPE_CATALOG_PARTS:'1',HUB_RECIPE_CATALOG_BATCH:'guarded',HUB_RECIPE_CATALOG_01:gzipSync(JSON.stringify({batchId:'guarded',recipes:[{id:'guarded_recipe',data:recipe}]})).toString('base64')};await applyRecipeCatalog(DB,env,'outsider');assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_records').first()).n,0);assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_operations').first()).n,0);await applyRecipeCatalog(DB,env,'owner');assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_records').first()).n,1);assert.ok(await DB.prepare('SELECT operation_key FROM hub_operations WHERE operation_key=?').bind('catalog-complete:guarded').first());});
 
 test('catalog rejects an oversized later chunk before applying an earlier valid chunk',async()=>{const{gzipSync}=await import('node:zlib');const recipes=Array.from({length:80},(_,i)=>({id:'size_recipe_'+i,data:{...recipe,title:'Size dish '+i,instructions:i<40?'Cook.':'Cook. '.repeat(1200)}}));const{DB,call}=setup({HUB_RECIPE_CATALOG_PARTS:'1',HUB_RECIPE_CATALOG_01:gzipSync(JSON.stringify({batchId:'oversize_chunks',recipes})).toString('base64')});const result=await call('/api/state');assert.equal(result.status,503);assert.equal(result.data.error.code,'recipe_import_invalid');assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_records').first()).n,0);assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_operations').first()).n,0);});
+
+async function seedSyntheticCookbook(DB,count){
+ const now=new Date().toISOString();
+ await DB.prepare("WITH RECURSIVE counter(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM counter WHERE n<?) INSERT INTO hub_records(id,kind,data,version,created_at,updated_at,updated_by) SELECT 'capacity_recipe_'||n,'recipe',json_set(?,'$.title','Synthetic cookbook recipe '||n),1,?,?,'owner' FROM counter").bind(count,JSON.stringify({...recipe,collection:'Synthetic capacity fixture'}),now,now).run();
+}
+
+test('a large cookbook leaves both calendar refresh paths usable and unrelated household records unchanged',async()=>{
+ const apple=appleFixture(),feed=subscriptionFixture('capacity-subscription');
+ const {call,DB,env}=setup({HUB_ENCRYPTION_KEY:Buffer.alloc(32,101).toString('base64'),ICLOUD_FETCH:apple.fetcher,CALENDAR_FEED_FETCH:feed.fetcher,CALENDAR_FEED_RESOLVE:feed.resolve});
+ await call('/api/items','POST',{kind:'source',data:{title:'iCloud',sourceId:'icloud',adapter:'icloud'}});
+ await call('/api/items','POST',{kind:'shopping',data:{title:'Synthetic groceries',done:true}});
+ await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic household task',done:false}});
+ const manual=(await call('/api/items','POST',{kind:'calendar',data:{title:'Synthetic manual plan',startAt:new Date().toISOString()}})).data.record;
+ assert.equal((await call('/api/icloud/connect','POST',{username:'owner@example.test',password:'synthetic-app-password'})).status,200);
+ assert.equal((await call('/api/icloud/calendars','POST',{calendarIds:[apple.calendar]})).status,200);
+ assert.equal((await call('/api/icloud/sync','POST',{})).status,200);
+ const added=await call('/api/icloud/subscriptions','POST',{title:'Synthetic subscribed sessions',url:feed.privateUrl});
+ assert.equal(added.status,201);
+ const subscriptionId=added.data.subscriptions[0].id;
+ await seedSyntheticCookbook(DB,3500);
+ const unrelated=await DB.prepare("SELECT * FROM hub_records WHERE kind NOT IN ('calendar','source') OR id=? ORDER BY id").bind(manual.id).all();
+ const originalIds=(await call('/api/state')).data.records.filter(row=>row.kind==='calendar').map(row=>row.id).sort();
+ const refresh=async args=>{
+  const response=await handleMcp(new Request('https://hub.test/mcp',{method:'POST',headers:{'Content-Type':'application/json','oai-authenticated-user-id':'owner'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'bird_hub_refresh_calendar',arguments:args}})}),env);
+  const result=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(result.result.isError,false,JSON.stringify(result));
+  assert.equal(result.result.structuredContent.importedCount,1);
+ };
+ for(let round=0;round<2;round++){
+  await refresh({source:'icloud'});
+  await refresh({source:'subscription',subscriptionId});
+ }
+ const state=await call('/api/state');
+ assert.equal(state.status,200);
+ assert.equal(state.data.records.filter(row=>row.kind==='recipe').length,3500);
+ assert.equal(state.data.records.find(row=>row.kind==='recipe').data.summaryOnly,true);
+ assert.equal(state.data.records.find(row=>row.kind==='recipe').data.instructions,undefined);
+ assert.deepEqual(state.data.records.filter(row=>row.kind==='calendar').map(row=>row.id).sort(),originalIds);
+ assert.deepEqual(await DB.prepare("SELECT * FROM hub_records WHERE kind NOT IN ('calendar','source') OR id=? ORDER BY id").bind(manual.id).all(),unrelated);
+ const status=(await call('/api/icloud/status')).data;
+ assert.equal(status.status,'ready');
+ assert.equal(status.subscriptions[0].status,'ready');
+ assert.ok(status.lastSuccess&&status.subscriptions[0].lastSuccess);
+});
+
+test('calendar admission and the shared reader agree at the exact record bound and reject one more without partial writes',async()=>{
+ const {snapshot,commitStore}=await import('../server/icloud-store.ts');
+ const {call,DB}=setup();await call('/api/state');
+ await seedSyntheticCookbook(DB,MAX_HOUSEHOLD_RECORDS-2);
+ const now=new Date().toISOString();
+ // Retained old manual rows can lack origin; they still occupy one household record.
+ await DB.prepare("INSERT INTO hub_records(id,kind,data,version,created_at,updated_at,updated_by) VALUES('capacity_legacy_manual','calendar',?,1,?,?,'owner')").bind(JSON.stringify({title:'Synthetic legacy manual plan',startAt:now,endAt:now}),now,now).run();
+ const contribution=index=>({contribution_key:'capacity_contribution_'+index,user_id:'owner',calendar_id:'synthetic_calendar',provider_id:'synthetic_provider_'+index,event_key:String(index).padStart(64,'0'),record_id:'capacity_imported_'+index,data:JSON.stringify({title:'Synthetic imported event '+index,startAt:now,endAt:now,origin:'icloud'}),updated_at:now});
+ await commitStore({db:DB,before:await snapshot(DB),contributions:[contribution(1)],userId:'owner'});
+ const exact=await call('/api/state');
+ assert.equal(exact.status,200);
+ assert.equal(exact.data.records.length,MAX_HOUSEHOLD_RECORDS);
+ const before=await snapshot(DB),operationsBefore=(await DB.prepare('SELECT COUNT(*) AS n FROM hub_operations').first()).n;
+ await assert.rejects(commitStore({db:DB,before,contributions:[...before.contributions,contribution(2)],userId:'owner'}),error=>error.code==='household_capacity'&&error.status===413);
+ assert.deepEqual(await snapshot(DB),before);
+ assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_operations').first()).n,operationsBefore);
+ assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM hub_records').first()).n,MAX_HOUSEHOLD_RECORDS);
+ await DB.prepare("INSERT INTO hub_records(id,kind,data,version,created_at,updated_at,updated_by) VALUES('capacity_overflow_fixture','shopping','{\"title\":\"Synthetic overflow\"}',1,?,?,'owner')").bind(now,now).run();
+ const overflow=await call('/api/state');
+ assert.equal(overflow.status,503);
+ assert.equal(overflow.data.error.code,'record_limit');
+});
+
+test('failed provider reads can record honest source health above the shared record bound without replacing saved events',async()=>{
+ const apple=appleFixture(),feed=subscriptionFixture('capacity-failure-subscription');
+ const {call,DB}=setup({HUB_ENCRYPTION_KEY:Buffer.alloc(32,102).toString('base64'),ICLOUD_FETCH:apple.fetcher,CALENDAR_FEED_FETCH:feed.fetcher,CALENDAR_FEED_RESOLVE:feed.resolve});
+ assert.equal((await call('/api/icloud/connect','POST',{username:'owner@example.test',password:'synthetic-app-password'})).status,200);
+ assert.equal((await call('/api/icloud/calendars','POST',{calendarIds:[apple.calendar]})).status,200);
+ assert.equal((await call('/api/icloud/sync','POST',{})).status,200);
+ assert.equal((await call('/api/icloud/subscriptions','POST',{title:'Synthetic failing sessions',url:feed.privateUrl})).status,201);
+ const previous=(await call('/api/icloud/status')).data;
+ await seedSyntheticCookbook(DB,MAX_HOUSEHOLD_RECORDS);
+ const records=await DB.prepare('SELECT * FROM hub_records ORDER BY id').all();
+ assert.equal(records.results.length,MAX_HOUSEHOLD_RECORDS+2);
+ apple.fail=true;feed.fail=true;
+ assert.equal((await call('/api/icloud/sync','POST',{})).status,502);
+ assert.equal((await call('/api/icloud/subscriptions/'+previous.subscriptions[0].id+'/sync','POST',{})).status,502);
+ const failed=(await call('/api/icloud/status')).data;
+ assert.equal(failed.status,'error');
+ assert.equal(failed.lastSuccess,previous.lastSuccess);
+ assert.equal(failed.subscriptions[0].status,'error');
+ assert.equal(failed.subscriptions[0].lastSuccess,previous.subscriptions[0].lastSuccess);
+ assert.ok(failed.error&&failed.subscriptions[0].error);
+ assert.deepEqual(await DB.prepare('SELECT * FROM hub_records ORDER BY id').all(),records);
+});
