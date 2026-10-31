@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { handleApi } from '../server/api.ts';
 import { handleMcp } from '../server/mcp.ts';
 import { freshness, nextReminderDue, scaledIngredients } from '../server/domain.ts';
+import { londonTaskDay, taskCompletedToday } from '../shared/family-tasks.ts';
 import { MAX_HOUSEHOLD_RECORDS } from '../shared/record-limits.ts';
 class Database {
  constructor(){this.db=new DatabaseSync(':memory:');for(const f of readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())this.db.exec(readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));}
@@ -388,3 +389,91 @@ test('concurrent recipe change at correction admission aborts the whole batch an
 });
 
  test('split runtime correction settings reassemble once without losing source text',async()=>{const{call,env}=setup();const saved=(await call('/api/items','POST',{kind:'recipe',data:recipe})).data.record;const raw=JSON.stringify({batchId:'split_original_source',recipes:[{id:saved.id,version:1,data:{...recipe,title:'Verified original card',notes:'Original source quantities retained.'}}]});env.HUB_RECIPE_CORRECTIONS_JSON=raw.slice(0,73);env.HUB_RECIPE_CORRECTIONS_JSON_2=raw.slice(73,150);env.HUB_RECIPE_CORRECTIONS_JSON_3=raw.slice(150);const first=await call('/api/state');assert.equal(first.status,200);const detail=(await call('/api/items/'+saved.id)).data.record;assert.equal(detail.version,2);assert.equal(detail.data.notes,'Original source quantities retained.');});
+
+test('family task periods persist across household reads and completion metadata cannot be invented',async()=>{
+ const {call}=setup();
+ const created=await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic task',lastCompletedAt:'2099-01-01T00:00:00Z',lastCompletedDueAt:'2099-01-01',completionUndo:{dueAt:'2099-01-01'}}});
+ assert.equal(created.status,201);const original=created.data.record;
+ assert.equal(original.data.period,'all_day');assert.equal(original.data.lastCompletedAt,undefined);assert.equal(original.data.completionUndo,undefined);
+ const updated=await call('/api/items/'+original.id,'PATCH',{version:original.version,data:{period:'night',lastCompletedAt:'2099-01-01T00:00:00Z',completionUndo:{dueAt:'2099-01-01'}}});
+ assert.equal(updated.status,200);assert.equal(updated.data.record.data.period,'night');assert.equal(updated.data.record.data.lastCompletedAt,undefined);
+ await call('/api/members','POST',{userId:'partner',displayName:'Synthetic partner'});
+ const partner=(await call('/api/state','GET',undefined,{user:'partner'})).data.records.find(row=>row.id===original.id);
+ assert.equal(partner.data.period,'night');assert.equal(partner.data.lastCompletedAt,undefined);
+ assert.equal((await call('/api/items','POST',{kind:'reminder',data:{title:'Bad period',period:'afternoon'}})).status,400);
+ assert.equal((await call('/api/items/'+original.id,'PATCH',{version:updated.data.record.version,data:{period:null}})).status,400);
+});
+
+test('routine completion and undo persist on the same shared task with versions and no duplicate advancement',async()=>{
+ const {call,DB}=setup();await call('/api/state');await call('/api/members','POST',{userId:'partner',displayName:'Synthetic partner'});
+ const today=londonTaskDay(new Date()),original=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic morning routine',period:'morning',repeat:'daily',dueAt:today}})).data.record;
+ const endpoint='/api/reminders/'+original.id+'/completion';
+ const completed=await call(endpoint,'POST',{version:original.version,done:true},{user:'partner'});
+ assert.equal(completed.status,200);const saved=completed.data.record;
+ assert.equal(saved.id,original.id);assert.equal(saved.data.done,false);assert.equal(saved.data.lastCompletedDueAt,today);
+ assert.equal(taskCompletedToday(saved.data,today),true);assert.ok(londonTaskDay(saved.data.dueAt)>today);
+ assert.equal((await call(endpoint,'POST',{version:original.version,done:true})).status,409);
+ const replay=await call(endpoint,'POST',{version:saved.version,done:true});
+ assert.equal(replay.status,200);assert.deepEqual(replay.data.record,saved);
+ const reread=(await call('/api/state')).data.records.find(row=>row.id===original.id);
+ assert.equal(taskCompletedToday(reread.data,today),true);assert.deepEqual(reread.data,saved.data);
+ const edited=(await call('/api/items/'+original.id,'PATCH',{version:reread.version,data:{title:'Renamed synthetic routine',period:'night',repeat:'daily',dueAt:reread.data.dueAt,done:false,lastCompletedAt:null,completionUndo:null}})).data.record;
+ assert.equal(taskCompletedToday(edited.data,today),true);assert.equal(edited.data.lastCompletedAt,saved.data.lastCompletedAt);
+ const undone=await call(endpoint,'POST',{version:edited.version,done:false},{user:'partner'});
+ assert.equal(undone.status,200);assert.equal(undone.data.record.data.title,'Renamed synthetic routine');assert.equal(undone.data.record.data.period,'night');
+ assert.equal(undone.data.record.data.dueAt,today);assert.equal(undone.data.record.data.lastCompletedAt,undefined);assert.equal(undone.data.record.data.lastCompletedDueAt,undefined);assert.equal(undone.data.record.data.completionUndo,undefined);
+ assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM hub_records WHERE kind='reminder'").first()).n,1);
+});
+
+test('one-off task completion stamps the server time and remains reversible across distinct household sessions',async()=>{
+ const {call}=setup();await call('/api/state');await call('/api/members','POST',{userId:'partner',displayName:'Synthetic partner'});
+ const original=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic one-off',period:'all_day'}})).data.record;
+ const endpoint='/api/reminders/'+original.id+'/completion',before=Date.now();
+ const completed=await call(endpoint,'POST',{version:original.version,done:true});assert.equal(completed.status,200);
+ const saved=completed.data.record;assert.equal(saved.data.done,true);assert.ok(Date.parse(saved.data.lastCompletedAt)>=before);assert.ok(Date.parse(saved.data.lastCompletedAt)<=Date.now());
+ const reread=(await call('/api/state','GET',undefined,{user:'partner'})).data.records.find(row=>row.id===original.id);
+ assert.equal(taskCompletedToday(reread.data,londonTaskDay(new Date())),true);
+ const restored=await call(endpoint,'POST',{version:reread.version,done:false},{user:'partner'});
+ assert.equal(restored.status,200);assert.equal(restored.data.record.data.done,false);assert.equal(restored.data.record.data.lastCompletedAt,undefined);
+ const stale=await call(endpoint,'POST',{version:reread.version,done:true});assert.equal(stale.status,409);
+});
+
+test('overdue and undated routines advance past today without creating backlog copies, while future routines wait',async()=>{
+ const {call,DB}=setup();const today=londonTaskDay(new Date());
+ const overdue=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic overdue routine',repeat:'daily',dueAt:'2000-01-01T08:00:00Z',period:'morning'}})).data.record;
+ const done=await call('/api/reminders/'+overdue.id+'/completion','POST',{version:overdue.version,done:true});
+ assert.equal(done.status,200);assert.ok(londonTaskDay(done.data.record.data.dueAt)>today);assert.equal(done.data.record.data.lastCompletedDueAt,overdue.data.dueAt);
+ const undated=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic undated routine',repeat:'daily',period:'night'}})).data.record;
+ assert.equal(undated.data.dueAt,today);
+ const checked=await call('/api/reminders/'+undated.id+'/completion','POST',{version:undated.version,done:true});assert.equal(checked.status,200);assert.ok(londonTaskDay(checked.data.record.data.dueAt)>today);
+ const future=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic future routine',repeat:'weekly',dueAt:nextReminderDue(today,'weekly')}})).data.record;
+ const rejected=await call('/api/reminders/'+future.id+'/completion','POST',{version:future.version,done:true});assert.equal(rejected.status,409);assert.equal(rejected.data.error.code,'task_not_due');
+ assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM hub_records WHERE kind='reminder'").first()).n,3);
+ assert.deepEqual((await call('/api/state')).data.records.find(row=>row.id===future.id),future);
+});
+
+test('fixed family task completion rejects outsiders, cross-origin calls, malformed actions and non-task targets',async()=>{
+ const {call}=setup();const original=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic protected task'}})).data.record;
+ const endpoint='/api/reminders/'+original.id+'/completion',data={version:original.version,done:true};
+ assert.equal((await call(endpoint,'POST',data,{anonymous:true})).status,401);
+ assert.equal((await call(endpoint,'POST',data,{user:'outsider'})).status,403);
+ assert.equal((await call(endpoint,'POST',data,{origin:'https://other.test'})).status,403);
+ for(const bad of [{version:1},{version:1,done:'yes'},{version:1,done:true,lastCompletedAt:'2099-01-01'},{version:0,done:true}])assert.equal((await call(endpoint,'POST',bad)).status,400);
+ const shopping=(await call('/api/items','POST',{kind:'shopping',data:{title:'Synthetic shopping'}})).data.record;
+ assert.equal((await call('/api/reminders/'+shopping.id+'/completion','POST',{version:shopping.version,done:true})).status,400);
+ assert.deepEqual((await call('/api/state')).data.records.find(row=>row.id===original.id),original);
+});
+
+test('legacy checkbox patches use trusted completion transitions and editor payloads cannot erase routine completion',async()=>{
+ const {call}=setup();const today=londonTaskDay(new Date());
+ const original=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic legacy checkbox',repeat:'daily',dueAt:today}})).data.record;
+ const done=await call('/api/items/'+original.id,'PATCH',{version:original.version,data:{done:true}});assert.equal(done.status,200);
+ assert.equal(taskCompletedToday(done.data.record.data,today),true);const next=done.data.record.data.dueAt;
+ const editor=await call('/api/items/'+original.id,'PATCH',{version:done.data.record.version,data:{title:'Edited routine',repeat:'daily',period:'morning',dueAt:next,done:false,lastCompletedAt:null,lastCompletedDueAt:null}});
+ assert.equal(editor.status,200);assert.equal(editor.data.record.data.lastCompletedAt,done.data.record.data.lastCompletedAt);
+ const undone=await call('/api/items/'+original.id,'PATCH',{version:editor.data.record.version,data:{done:false}});
+ assert.equal(undone.status,200);assert.equal(undone.data.record.data.dueAt,today);assert.equal(undone.data.record.data.lastCompletedAt,undefined);
+ const oneoff=(await call('/api/items','POST',{kind:'reminder',data:{title:'Synthetic old one-off'}})).data.record;
+ const ticked=await call('/api/items/'+oneoff.id,'PATCH',{version:oneoff.version,data:{done:true}});assert.equal(ticked.status,200);assert.ok(ticked.data.record.data.lastCompletedAt);
+ const unticked=await call('/api/items/'+oneoff.id,'PATCH',{version:ticked.data.record.version,data:{done:false}});assert.equal(unticked.data.record.data.done,false);assert.equal(unticked.data.record.data.lastCompletedAt,undefined);
+});

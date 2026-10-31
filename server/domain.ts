@@ -1,4 +1,6 @@
 import {validateRecipePhotoSourceUrl} from './recipe-photo-source.ts';
+import { londonTaskDay } from '../shared/family-tasks.ts';
+
 export const KINDS = ['calendar','shopping','reminder','recipe','meal','profile','source'] as const;
 export type Kind = typeof KINDS[number];
 export type Data = Record<string, unknown>;
@@ -28,7 +30,7 @@ export function validateData(kind:Kind, raw:unknown):Data {
   return clean({title:string(d.title,'Title'),startAt,endAt,allDay:bool(d.allDay),person:optional(d.person,'Person'),personId:optional(d.personId,'Profile ID'),location:optional(d.location,'Location',500),notes:optional(d.notes,'Notes',4000),status:choice(d.status,'Status',['confirmed','tentative'],'confirmed'),origin:choice(d.origin,'Origin',['manual','icloud'],'manual'),sourceId:optional(d.sourceId,'Source ID'),providerId:optional(d.providerId,'Provider ID',2000),calendarId:optional(d.calendarId,'Calendar ID',2000),calendarTitle:optional(d.calendarTitle,'Calendar title',300),color:optional(d.color,'Calendar colour',40)});
  }
  case 'shopping':return clean({title:string(d.title,'Item'),listName:string(d.listName??'Groceries','List'),quantity:optional(d.quantity,'Quantity'),done:bool(d.done),category:optional(d.category,'Category'),amount:d.amount==null?undefined:number(d.amount,'Amount',0,100000),unit:optional(d.unit,'Unit',40),sourceMealId:optional(d.sourceMealId,'Meal ID'),sourceRecipeId:optional(d.sourceRecipeId,'Recipe ID')});
- case 'reminder':return clean({title:string(d.title,'Title'),dueAt:date(d.dueAt,'Due date',false),done:bool(d.done),assignedTo:optional(d.assignedTo,'Assigned to'),repeat:choice(d.repeat,'Repeat',['none','daily','weekly','monthly'],'none'),notes:optional(d.notes,'Notes',4000),lastCompletedAt:date(d.lastCompletedAt,'Completed date',false)});
+ case 'reminder':return clean({title:string(d.title,'Title'),dueAt:date(d.dueAt,'Due date',false),done:bool(d.done),assignedTo:optional(d.assignedTo,'Assigned to'),repeat:choice(d.repeat,'Repeat',['none','daily','weekly','monthly'],'none'),period:choice(d.period,'Time of day',['morning','all_day','night'],'all_day'),notes:optional(d.notes,'Notes',4000)});
  case 'recipe': {
   if(!Array.isArray(d.ingredients)||d.ingredients.length>100)throw new ApiError(400,'invalid_input','Recipes need an ingredients list, up to 100 ingredients.');
   return clean({title:string(d.title,'Recipe title'),collection:optional(d.collection,'Collection',200),countryCodes:strings(d.countryCodes,'Country codes').map(c=>{if(!/^[A-Z]{2}$/.test(c))throw new ApiError(400,'invalid_input','Choose valid countries.');return c;}),yieldUnit:choice(d.yieldUnit,'Yield unit',['people','batches'],'people'),ingredients:d.ingredients.map(v=>{const x=object(v);return clean({name:string(x.name,'Ingredient'),amount:x.amount==null?undefined:number(x.amount,'Amount',0,100000),amountMax:x.amountMax==null?undefined:number(x.amountMax,'Maximum amount',typeof x.amount==='number'?x.amount:0,100000),unit:optional(x.unit,'Unit',40)});}),instructions:string(d.instructions,'Instructions',20000,false),servings:number(d.servings,'Servings',1,10000,4),notes:optional(d.notes,'Notes',5000),tags:strings(d.tags,'Tags'),prepMinutes:d.prepMinutes==null?undefined:number(d.prepMinutes,'Preparation time',0,10000),cookMinutes:d.cookMinutes==null?undefined:number(d.cookMinutes,'Cooking time',0,10000),sourceUrl:url(d.sourceUrl,'Recipe source'),photoSourceUrl:validateRecipePhotoSourceUrl(d.photoSourceUrl)});
@@ -47,8 +49,39 @@ export function validateAdmin(raw:unknown):Data {
 }
 export function freshness(lastSuccess:unknown,now=Date.now()):'green'|'yellow'|'red'|'unknown' { if(typeof lastSuccess!=='string'||!Number.isFinite(Date.parse(lastSuccess)))return 'unknown';if(Date.parse(lastSuccess)-now>300000)return 'unknown';const age=Math.max(0,now-Date.parse(lastSuccess));return age<=3600000?'green':age<=86400000?'yellow':'red'; }
 export function stable(value:unknown):string { if(Array.isArray(value))return '['+value.map(stable).join(',')+']';if(value&&typeof value==='object')return '{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';return JSON.stringify(value)??'null'; }
-export function nextReminderDue(current:string,repeat:string):string {
- const d=new Date(current);if(repeat==='daily')d.setUTCDate(d.getUTCDate()+1);if(repeat==='weekly')d.setUTCDate(d.getUTCDate()+7);if(repeat==='monthly'){const day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+1);const max=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();d.setUTCDate(Math.min(day,max));}return /^\d{4}-\d{2}-\d{2}$/.test(current)?d.toISOString().slice(0,10):d.toISOString();
+const reminderClock = new Intl.DateTimeFormat('en-GB', {timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+function reminderCivil(epoch:number):number[] {const parts=reminderClock.formatToParts(new Date(epoch));return ['year','month','day','hour','minute','second'].map(type=>Number(parts.find(part=>part.type===type)?.value));}
+function civilEpoch(parts:number[]):number {const d=new Date(0);d.setUTCFullYear(parts[0],parts[1]-1,parts[2]);d.setUTCHours(parts[3]??0,parts[4]??0,parts[5]??0,parts[6]??0);return d.getTime();}
+function reminderLondonEpoch(parts:number[]):number {
+ const wall=civilEpoch(parts),milliseconds=parts[6]??0;
+ const offsets=[...new Set([-86400000,0,86400000].map(shift=>{const t=wall+shift;return civilEpoch([...reminderCivil(t),milliseconds])-t;}))];
+ const candidates=offsets.map(offset=>wall-offset).map(epoch=>({epoch,wall:civilEpoch([...reminderCivil(epoch),milliseconds])}));
+ const exact=candidates.filter(value=>value.wall===wall).sort((a,b)=>a.epoch-b.epoch);
+ if(exact.length)return exact[0].epoch; // First occurrence of an ambiguous autumn time.
+ const forward=candidates.filter(value=>value.wall>wall).sort((a,b)=>a.wall-b.wall);
+ if(forward.length)return forward[0].epoch; // Shift a spring clock-gap time forward.
+ throw new ApiError(400,'invalid_input','This routine has an unsupported local time.');
+}
+/** Advance London calendar dates without moving an ordinary morning time at DST. */
+export function nextReminderDue(current:string,repeat:string,afterDay?:string):string {
+ const dateOnly=/^\d{4}-\d{2}-\d{2}$/.test(current),epoch=Date.parse(current);
+ if(!Number.isFinite(epoch))throw new ApiError(400,'invalid_input','Include a valid routine date.');
+ const currentDay=londonTaskDay(current),dayParts=currentDay.split('-').map(Number);
+ const clock=dateOnly?[0,0,0,0]:[...reminderCivil(epoch).slice(3),new Date(epoch).getUTCMilliseconds()];
+ const civil=civilEpoch([...dayParts,0,0,0]),after=afterDay?civilEpoch([...afterDay.split('-').map(Number),0,0,0]):undefined;
+ let target=new Date(civil);
+ if(repeat==='daily'||repeat==='weekly'){
+  const step=repeat==='daily'?1:7;
+  const jumps=after===undefined?1:Math.max(1,Math.floor((after-civil)/(step*86400000))+1);
+  target.setUTCDate(target.getUTCDate()+step*jumps);
+ }else if(repeat==='monthly'){
+  const afterParts=afterDay?.split('-').map(Number);
+  let months=afterParts?Math.max(1,(afterParts[0]-dayParts[0])*12+afterParts[1]-dayParts[1]):1;
+  const monthDate=(count:number)=>{const d=new Date(civil);d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+count);const end=new Date(d);end.setUTCMonth(end.getUTCMonth()+1);end.setUTCDate(0);d.setUTCDate(Math.min(dayParts[2],end.getUTCDate()));return d;};
+  target=monthDate(months);if(after!==undefined&&target.getTime()<=after)target=monthDate(++months);
+ }
+ const targetDay=target.toISOString().slice(0,10);if(dateOnly)return targetDay;
+ return new Date(reminderLondonEpoch([...targetDay.split('-').map(Number),...clock])).toISOString();
 }
 export function scaledIngredients(recipe:Data,servings:number,excluded:string[]=[]):Data[] {
  const original=number(recipe.servings,'Recipe servings',1,10000,4);const scale=number(servings,'Servings',1,100)/original;const groups=new Map<string,Data>();

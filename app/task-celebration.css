@@ -1,0 +1,89 @@
+.task-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
+  --task-fall-distance: calc(100vh + 100px);
+}
+.task-celebration-veil {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, #213b4161, #19343e20 75%);
+  animation: task-celebration-veil 5.6s ease both;
+}
+.task-celebration-shower { position: absolute; inset: 0; overflow: hidden; }
+.task-celebration-particle {
+  position: absolute;
+  top: -64px;
+  line-height: 1;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  user-select: none;
+  animation: task-celebration-fall linear both;
+  filter: drop-shadow(0 3px 4px #153a3b18);
+}
+.task-celebration-card {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100% - 36px));
+  padding: 27px 26px 20px;
+  box-sizing: border-box;
+  border: 1px solid #ffffff91;
+  border-radius: 27px;
+  background: #fffef7ed;
+  box-shadow: 0 18px 85px #1f413930;
+  color: #31594f;
+  text-align: center;
+  animation: task-celebration-arrive .35s ease both;
+}
+.task-celebration-badge { display: block; font-size: 43px; line-height: 1.2; margin-bottom: 14px; }
+.task-celebration-card h2 { font: inherit; font-size: clamp(24px, 4vw, 34px); font-weight: 600; letter-spacing: -.035em; line-height: 1.2; margin: 0 0 10px; overflow-wrap: anywhere; }
+.task-celebration-card p { font-size: 14px; line-height: 1.6; margin: 0; color: #577567; }
+.task-celebration-dismiss {
+  pointer-events: auto;
+  min-height: 44px;
+  min-width: 108px;
+  margin-top: 19px;
+  padding: 10px 17px;
+  background: #e7f2e6;
+  border: 1px solid #bed4be;
+  border-radius: 999px;
+  color: #355f4e;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.task-celebration-dismiss span { margin-left: 8px; }
+.task-celebration-dismiss:hover { background: #dcecd8; }
+.task-celebration-dismiss:focus-visible { outline: 3px solid #4d8d7a; outline-offset: 4px; }
+@keyframes task-celebration-fall {
+  0% { opacity: 0; transform: translate3d(0, -30px, 0) rotate(-12deg); }
+  9% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--task-drift), var(--task-fall-distance), 0) rotate(var(--task-turn)); }
+}
+@keyframes task-celebration-veil {
+  0%,100% { opacity: 0; }
+  10%,87% { opacity: 1; }
+}
+@keyframes task-celebration-arrive {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+.task-celebration--still .task-celebration-card,
+.task-celebration--still .task-celebration-veil { animation: none; }
+@supports (height: 100dvh) {
+  .task-celebration { --task-fall-distance: calc(100dvh + 100px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-celebration-shower { display: none; }
+  .task-celebration-card,.task-celebration-veil { animation: none; }
+}
+@media (max-width: 700px) {
+  .task-celebration-card { top: 42%; padding: 24px 20px 17px; border-radius: 23px; }
+  .task-celebration-badge { font-size: 36px; }
+  .task-celebration-card p { font-size: 13px; }
+}

@@ -1,0 +1,61 @@
+.family-routines { --routine-person-colour: #6c9c8a; }
+.routine-topline { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.routine-topline h2 { margin: 7px 0 0; font-size: clamp(18px, 2vw, 25px); font-weight: 500; letter-spacing: -.025em; color: #365f55; }
+.routine-topline .button { gap: 7px; }
+.routine-progress { margin: 12px 0 22px; }
+.routine-progress>div { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 9px; color: #73877c; font-size: 12px; line-height: 1.5; }
+.routine-progress strong { color: #3c7f69; font-weight: 550; }
+.routine-progress progress { display: block; appearance: none; -webkit-appearance: none; width: 100%; height: 7px; border: 0; border-radius: 99px; overflow: hidden; background: #e4eee4; color: var(--routine-person-colour); }
+.routine-progress progress::-webkit-progress-bar { background: #e4eee4; border-radius: 99px; }
+.routine-progress progress::-webkit-progress-value { background: var(--routine-person-colour); border-radius: 99px; transition: width .25s ease; }
+.routine-progress progress::-moz-progress-bar { background: var(--routine-person-colour); border-radius: 99px; }
+.routine-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; padding: 18px 0 22px; border-top: 1px solid #dce7d9; }
+.routine-person-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.routine-person-filters button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; max-width: 100%; padding: 8px 13px; background: transparent; border: 1px solid #d6e4d4; border-radius: 99px; color: #627d6d; font: inherit; font-size: 12px; overflow-wrap: anywhere; cursor: pointer; }
+.routine-toolbar .segmented button { min-height: 44px; }
+.routine-person-filters button.active { color: #315f4d; border-color: #8db59f; background: #eaf3e7; }
+.routine-person-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.routine-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: 18px; align-items: start; }
+.routine-person { min-width: 0; padding: 22px 17px 13px; border: 1px solid #d9e5d4; border-top: 3px solid var(--routine-person-colour); border-radius: 20px; background: linear-gradient(145deg, #fffef9, #f3f8ee); }
+.routine-person-heading { display: flex; align-items: center; gap: 10px; }
+.routine-avatar { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 35px; height: 35px; color: #31594c; border: 1px solid var(--routine-person-colour); border-radius: 12px; background: #edf4e9; font-size: 16px; font-weight: 500; }
+.routine-person-heading h2 { margin: 0; color: #3c6053; font-weight: 550; font-size: 19px; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.routine-person .routine-progress { margin-bottom: 18px; }
+.routine-person .routine-progress>div { font-size: 11px; }
+.routine-person .routine-progress progress { height: 5px; }
+.routine-period { margin: 0; padding: 16px 0 7px; border-top: 1px solid #dce6d8; }
+.routine-period-heading { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-bottom: 8px; color: #5f7c69; }
+.routine-period-heading h3 { font-size: 13px; font-weight: 550; margin: 0; }
+.routine-period-icon { display: inline-flex; color: #a39158; }
+.period-all_day .routine-period-icon { color: #b89b55; }
+.period-night .routine-period-icon { color: #8994b2; }
+.routine-period-count { margin-left: auto; border-radius: 30px; font-size: 10px; padding: 3px 7px; background: #edf3e8; color: #859581; }
+.routine-task { display: flex; align-items: center; gap: 7px; min-height: 66px; padding: 9px 0; border-bottom: 1px solid #e4ebdf; }
+.routine-checkbox { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; border: 1.5px solid #afc6b4; border-radius: 12px; background: #fffef9; color: #fff; cursor: pointer; }
+.routine-checkbox:hover { border-color: #608d76; background: #edf5eb; }
+.routine-scheduled { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; color: #94a38f; }
+.routine-task.is-complete .routine-checkbox { background: var(--routine-person-colour); border-color: var(--routine-person-colour); }
+.routine-task-copy { align-self: stretch; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 5px; padding: 4px 0; min-height: 44px; text-align: left; font: inherit; background: none; border: 0; color: #345f51; cursor: pointer; }
+.routine-task-copy strong { width: 100%; font-size: 13px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.routine-task-copy span { font-size: 10px; color: #83937e; line-height: 1.6; overflow-wrap: anywhere; }
+.routine-task.is-complete .routine-task-copy strong { color: #769080; text-decoration: line-through; text-decoration-color: #afc4ad; }
+.routine-edit { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; margin-right: -10px; padding: 0; background: none; border: 0; color: #81967f; cursor: pointer; }
+.routine-add { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; margin-top: 4px; padding: 7px 0; border: 0; background: none; color: #61866f; font: inherit; font-size: 11px; cursor: pointer; }
+.routine-empty { padding: 9px 0; margin: 0; color: #8b9a86; font-size: 11px; line-height: 1.65; }
+.routine-list { max-width: 950px; }
+.routine-list .routine-period { padding: 22px 0 8px; }
+.routine-list .routine-period-heading h3 { font-size: 17px; }
+.routine-list .routine-task { gap: 13px; min-height: 71px; }
+.routine-list .routine-task-copy strong { font-size: 15px; }
+.routine-list .routine-task-copy span { font-size: 11px; }
+.routine-later { margin-top: 27px; border-top: 1px solid #dce6d8; }
+.routine-later details { border-bottom: 1px solid #e2eadd; padding: 4px 0; }
+.routine-later summary { cursor: pointer; min-height: 48px; padding: 14px 4px; color: #6d8472; font-size: 12px; }
+.routine-later summary>span { display: inline-block; margin-left: 5px; padding: 1px 7px; border-radius: 30px; background: #eaf1e6; font-size: 10px; }
+.routine-later .routine-task { max-width: 950px; }
+.routine-footnote { max-width: 650px; margin: 21px 0 0; font-size: 11px; line-height: 1.8; color: #7a917d; }
+.family-routines button:focus-visible,.family-routines summary:focus-visible { outline: 3px solid #6a9d86; outline-offset: 3px; }
+.family-routines button:disabled { cursor: wait; opacity: .55; }
+@media(min-width:1450px) { .routine-person { padding: 24px 22px 15px; } .routine-task-copy strong { font-size: 14px; } }
+@media(max-width:700px) { .routine-topline { align-items: flex-start; flex-wrap: wrap; gap: 14px; } .routine-topline .button { font-size: 11px; } .routine-board { grid-template-columns: minmax(0,1fr); gap: 17px; } .routine-person { padding: 21px 18px 12px; } .routine-toolbar { padding-bottom: 18px; } .routine-person-filters button { font-size: 11px; padding-inline: 11px; } .routine-task { gap: 10px; padding: 11px 0; } .routine-task-copy strong { font-size: 15px; } .routine-task-copy span { font-size: 11px; } .routine-period-heading h3 { font-size: 15px; } .routine-add { font-size: 12px; } .routine-empty,.routine-footnote { font-size: 12px; } }
+@media(prefers-reduced-motion:reduce) { .routine-progress progress::-webkit-progress-value { transition: none; } }
