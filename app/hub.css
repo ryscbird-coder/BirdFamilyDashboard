@@ -762,3 +762,17 @@ body { background: var(--bg); }
 .tonight-meal-summary>.recipe-dish-photo { flex:none; width:112px; height:112px; margin:0; border-radius:13px; object-fit:cover; }
 .tonight-meal-summary .meal-title { margin:0 0 10px; }
 @media(max-width:700px) { .tonight-meal-summary { gap:13px; } .tonight-meal-summary>.recipe-dish-photo { width:96px; height:96px; } }
+
+/* A full-app reload stays reachable in standalone iPad and Guided Access displays. */
+.header-right .app-refresh-button { flex:none; width:44px; min-width:44px; min-height:44px; }
+.header-right .app-refresh-button:disabled { opacity:.4; cursor:wait; }
+.header-right .app-refresh-button:focus-visible { outline:3px solid #6a9d86; outline-offset:3px; }
+@media(max-width:1100px) { .header-right { gap:8px; } }
+@media(max-width:900px) { .header-right>.privacy-pill { display:none; } }
+@media(max-width:700px) { .header-right { gap:5px; } }
+
+.briefing-card.panel.bella { border-color:#ded2db; background:linear-gradient(145deg,#fffdfa,#faf3f5); }
+.briefing-card.bella .briefing-icon { color:#956d88; border-color:#dfcbd9; background:#f5eaf1; }
+.overview-bottom>.briefing-card.bella .briefing-header { flex-wrap:wrap; gap:10px; }
+.overview-bottom>.briefing-card.bella .briefing-header>div { flex:1; min-width:120px; }
+.overview-bottom>.briefing-card.bella .briefing-title { font-size:19px; }
