@@ -9,7 +9,11 @@ export interface TaskCelebrationEvent {
   id: string;
   /** Omitted for the whole household; Family is used for unassigned tasks. */
   person?: string;
+  /** A display-only preview must never claim that household tasks were completed. */
+  preview?: boolean;
 }
+
+export type TaskCelebrationMode = 'shower' | 'calm' | 'system';
 
 export const TASK_CELEBRATION_SHAPES = [
   { name: 'snowflakes', symbol: '❄️' },

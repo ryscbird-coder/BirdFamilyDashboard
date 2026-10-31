@@ -120,3 +120,16 @@ test('pending and failed completions cannot double-submit or falsely check a tas
  assert.equal(fixture.button('Complete Morning fixture').props.disabled,false);
  assert.ok(fixture.nodes().some(node=>node.props.role==='alert'&&text(node)==='Synthetic offline save'));
 });
+
+test('celebration style and preview are display controls and never tick a family task',()=>{
+ const modes=[];let previews=0;
+ const screen=host({celebrationMode:'shower',onCelebrationModeChange:mode=>modes.push(mode),onPreviewCelebration:()=>{previews++;}});
+ const select=screen.find(node=>node.type==='select'&&node.props['aria-label']==='Celebration style');
+ assert.equal(select.props.value,'shower');
+ select.props.onChange({target:{value:'calm'}});
+ assert.deepEqual(modes,['calm']);
+ screen.button('Preview celebration').props.onClick();
+ assert.equal(previews,1);
+ assert.deepEqual(screen.completions,[]);
+ assert.deepEqual(screen.adds,[]);
+});

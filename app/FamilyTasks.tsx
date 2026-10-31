@@ -2,6 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { TASK_PERIODS, londonTaskDay, taskCompletedToday, taskIsForToday, taskPeriod } from "../shared/family-tasks";
+import type { TaskCelebrationMode } from "./task-celebration";
 import "./family-tasks.css";
 
 type Item = { id: string; kind: string; data: Record<string, any>; version: number; createdAt: string; updatedAt: string };
@@ -14,6 +15,9 @@ type Props = {
   onComplete: (item: Item, done: boolean) => Promise<void> | void;
   onEdit: (item: Item) => void;
   onAddPerson: () => void;
+  celebrationMode?: TaskCelebrationMode;
+  onCelebrationModeChange?: (mode: TaskCelebrationMode) => void;
+  onPreviewCelebration?: () => void;
 };
 
 const UNASSIGNED = "__family_unassigned__";
@@ -35,7 +39,7 @@ function Progress({ tasks, today, label }: { tasks: Item[]; today: string; label
 }
 
 /** The same saved family tasks, arranged by person and part of the London day. */
-export default function FamilyTasks({ tasks, profiles, today, busy, onAdd, onComplete, onEdit, onAddPerson }: Props) {
+export default function FamilyTasks({ tasks, profiles, today, busy, onAdd, onComplete, onEdit, onAddPerson, celebrationMode = "shower", onCelebrationModeChange, onPreviewCelebration }: Props) {
   const [person, setPerson] = useState("");
   const [layout, setLayout] = useState<"board" | "list">("board");
   const [pending, setPending] = useState("");
@@ -84,6 +88,7 @@ export default function FamilyTasks({ tasks, profiles, today, busy, onAdd, onCom
   return <section className="panel family-routines" aria-label="Family tasks by time of day">
     <div className="routine-topline"><div><span className="panel-kicker">TODAY’S LITTLE WINS</span><h2>{dayLabel(today)}</h2></div><button type="button" className="button ghost small" onClick={onAddPerson}><Plus/> Add family member</button></div>
     <Progress tasks={householdToday} today={today} label="Whole family"/>
+    {onCelebrationModeChange && <div className="routine-celebration-controls"><label>Celebrations<select aria-label="Celebration style" value={celebrationMode} onChange={event => onCelebrationModeChange(event.target.value as TaskCelebrationMode)}><option value="shower">Shower</option><option value="calm">Calm</option><option value="system">Device setting</option></select></label>{onPreviewCelebration && <button type="button" className="button ghost small" onClick={onPreviewCelebration} disabled={busy}>Preview celebration</button>}<span>Just for this screen.</span></div>}
     <div className="routine-toolbar"><div className="routine-person-filters" aria-label="Filter tasks by family member"><button type="button" aria-pressed={!person} className={!person ? "active" : ""} onClick={() => setPerson("")}>Everyone</button>{names.map(name => <button type="button" key={name} aria-pressed={person === name} className={person === name ? "active" : ""} onClick={() => setPerson(name)}><span className="routine-person-dot" style={{ background: colour(name) }}/>{name}</button>)}<button type="button" aria-pressed={person === UNASSIGNED} className={person === UNASSIGNED ? "active" : ""} onClick={() => setPerson(UNASSIGNED)}>Family / unassigned</button></div><div className="segmented" aria-label="Task layout"><button type="button" aria-pressed={layout === "board"} className={layout === "board" ? "active" : ""} onClick={() => setLayout("board")}>Family board</button><button type="button" aria-pressed={layout === "list"} className={layout === "list" ? "active" : ""} onClick={() => setLayout("list")}>List</button></div></div>
     {error && <p className="notice warning" role="alert">{error}</p>}
     {layout === "board" ? <div className="routine-board">{boardNames.map(name => {

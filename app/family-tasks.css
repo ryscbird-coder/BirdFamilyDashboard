@@ -59,3 +59,10 @@
 @media(min-width:1450px) { .routine-person { padding: 24px 22px 15px; } .routine-task-copy strong { font-size: 14px; } }
 @media(max-width:700px) { .routine-topline { align-items: flex-start; flex-wrap: wrap; gap: 14px; } .routine-topline .button { font-size: 11px; } .routine-board { grid-template-columns: minmax(0,1fr); gap: 17px; } .routine-person { padding: 21px 18px 12px; } .routine-toolbar { padding-bottom: 18px; } .routine-person-filters button { font-size: 11px; padding-inline: 11px; } .routine-task { gap: 10px; padding: 11px 0; } .routine-task-copy strong { font-size: 15px; } .routine-task-copy span { font-size: 11px; } .routine-period-heading h3 { font-size: 15px; } .routine-add { font-size: 12px; } .routine-empty,.routine-footnote { font-size: 12px; } }
 @media(prefers-reduced-motion:reduce) { .routine-progress progress::-webkit-progress-value { transition: none; } }
+
+.routine-celebration-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 20px; }
+.routine-celebration-controls label { display:flex; align-items:center; gap:9px; color:#527461; font-size:12px; }
+.routine-celebration-controls select { min-height:44px; border:1px solid #b7ceb7; border-radius:12px; background:#fffef9; color:#365e4c; font:inherit; padding:8px 32px 8px 12px; }
+.routine-celebration-controls>span { color:#7a917d; font-size:11px; }
+.routine-celebration-controls select:focus-visible { outline:3px solid #6a9d86; outline-offset:3px; }
+@media(max-width:700px) { .routine-celebration-controls { gap:10px; } .routine-celebration-controls>span { width:100%; } }

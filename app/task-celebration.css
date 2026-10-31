@@ -20,7 +20,7 @@
   line-height: 1;
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   user-select: none;
-  animation: task-celebration-fall linear both;
+  animation: task-celebration-fall var(--task-duration, 3.5s) linear var(--task-delay, 0s) both;
   filter: drop-shadow(0 3px 4px #153a3b18);
 }
 .task-celebration-card {
@@ -59,6 +59,7 @@
 .task-celebration-dismiss span { margin-left: 8px; }
 .task-celebration-dismiss:hover { background: #dcecd8; }
 .task-celebration-dismiss:focus-visible { outline: 3px solid #4d8d7a; outline-offset: 4px; }
+.task-celebration-show { margin-right: 8px; }
 @keyframes task-celebration-fall {
   0% { opacity: 0; transform: translate3d(0, -30px, 0) rotate(-12deg); }
   9% { opacity: 1; }
@@ -81,6 +82,19 @@
 @media (prefers-reduced-motion: reduce) {
   .task-celebration-shower { display: none; }
   .task-celebration-card,.task-celebration-veil { animation: none; }
+}
+/* Shower is an explicit choice for this display. Only its falling shapes bypass
+   the app-wide reduced-motion rule; all other interface motion stays unchanged. */
+.task-celebration--force-motion .task-celebration-shower { display: block !important; }
+.task-celebration--force-motion .task-celebration-particle {
+  animation-name: task-celebration-fall !important;
+  animation-duration: var(--task-duration, 3.5s) !important;
+  animation-delay: var(--task-delay, 0s) !important;
+  animation-timing-function: linear !important;
+  animation-fill-mode: both !important;
+  animation-iteration-count: 1 !important;
+  animation-direction: normal !important;
+  animation-play-state: running !important;
 }
 @media (max-width: 700px) {
   .task-celebration-card { top: 42%; padding: 24px 20px 17px; border-radius: 23px; }
