@@ -755,3 +755,10 @@ body { background: var(--bg); }
 
 /* One small, lazy-loaded dish thumbnail per recipe; fixed geometry avoids jumps. */
 .recipe-card>.recipe-dish-photo{display:block;width:100%;height:150px;object-fit:cover;border-radius:10px;margin:0 0 18px;background:#eaf0e7}.recipe-dish-photo.detail{float:right;width:min(42%,300px);height:auto;max-height:220px;object-fit:contain;border-radius:12px;margin:0 0 20px 24px;background:#edf2e9}.recipe-detail-intro:after{content:"";display:block;clear:both}@media(max-width:650px){.recipe-card>.recipe-dish-photo{height:165px}.recipe-dish-photo.detail{float:none;width:100%;max-height:210px;margin:0 0 20px;object-fit:cover}}
+
+/* Home card 04: reuse the selected recipe's small dish image beside its saved meal title. */
+.tonight-meal-summary { display:flex; align-items:center; gap:16px; margin-top:17px; }
+.tonight-meal-summary>div { flex:1; min-width:0; }
+.tonight-meal-summary>.recipe-dish-photo { flex:none; width:112px; height:112px; margin:0; border-radius:13px; object-fit:cover; }
+.tonight-meal-summary .meal-title { margin:0 0 10px; }
+@media(max-width:700px) { .tonight-meal-summary { gap:13px; } .tonight-meal-summary>.recipe-dish-photo { width:96px; height:96px; } }
