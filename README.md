@@ -41,6 +41,8 @@ The database schema lives in db/schema.ts. Generate append-only migrations using
 
 The header’s Refresh app button performs a full page reload, including the latest deployed code, without leaving a standalone iPad app or Guided Access. It preserves the current view, wall mode and recipe tab in the URL, and is disabled while a write or editing/camera panel is active. Existing open displays must load the version containing the button once before it is available.
 
+Safari home-screen branding uses explicit early links in `app/layout.tsx`, opaque 180px PNGs at `/apple-touch-icon.png` and `/apple-touch-icon-precomposed.png`, and `/manifest.webmanifest` with 192px/512px icons. All use the existing Bird mark from `public/icons/bird-family-hub.svg` on the daylight mint background. Keep the PNG exports and versioned icon links in sync when changing branding. Existing iOS shortcuts may retain their old icon: remove only the home-screen shortcut, open the live Hub in Safari, then Share → Add to Home Screen again. The manifest supplies standalone launch metadata; it does not add offline storage or change household sign-in.
+
 ## Data and permissions
 
 Every API operation requires platform-injected `oai-authenticated-user-id`; write routes also validate same origin and bounded JSON. Owner-private first use atomically claims the owner. Do not broaden access before owner bootstrap. The owner may create a verified-email invitation with POST /api/members/invites or the fixed private MCP tool. On later sign-in only an exact trusted email match grants household member status. Sites visitor access is an independent required grant. Do not guess family emails.
