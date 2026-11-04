@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useId, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkReportGfm from "./report-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -227,10 +227,8 @@ export function DashboardTabs({ labels, children }: { labels: string[]; children
   </div>;
 }
 
-export default function ReportContent({ body, originalUrl, presentation = "document" }: { body: string; originalUrl?: string; presentation?: "document" | "dashboard" }) {
-  if (!body) return <p className="report-empty">No original report text is available for this saved update.</p>;
-  const dashboard = presentation === "dashboard";
-  return <div className={`report-content${dashboard ? " dashboard-report" : ""}`}><ReactMarkdown remarkPlugins={[remarkReportGfm]} rehypePlugins={dashboard ? [rehypeRaw, rememberDashboardStructure, revealOriginalReport, [rehypeSanitize, reportSchema], groupDashboardSections] : [rehypeRaw, revealOriginalReport, [rehypeSanitize, reportSchema]]} urlTransform={url => safeHref(url) || ""} components={{
+function createReportComponents(dashboard: boolean): Components {
+  return {
     div: ({ node, children, ...props }) => {
       const data = node?.data as { dashboardTabs?: boolean; dashboardLabels?: string[]; dashboardStyle?: string } | undefined;
       return data?.dashboardTabs ? <DashboardTabs labels={data.dashboardLabels || []}>{children}</DashboardTabs> : <div {...props} className={dashboard ? data?.dashboardStyle : undefined}>{children}</div>;
@@ -238,5 +236,16 @@ export default function ReportContent({ body, originalUrl, presentation = "docum
     a: ({ node: _node, href, children, ...props }) => href ? <a {...props} href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noreferrer noopener">{children}</a> : <span>{children}</span>,
     table: ({ node: _node, ...props }) => <div className="report-table-scroll" style={{ overflowX: "auto" }}><table {...props}/></div>,
     img: ({ node: _node, src, alt, ...props }) => typeof src === "string" && safeHref(src) ? <img {...props} src={src} alt={alt || "Image from the original report"} loading="lazy" referrerPolicy="no-referrer" style={{ maxWidth: "100%", height: "auto" }}/> : <span>{alt || "Image available in the original report"}</span>,
-  }}>{dashboard ? dashboardMarkdown(body, originalUrl) : reportMarkdown(body, originalUrl)}</ReactMarkdown></div>;
+  };
+}
+
+// Stable renderer types keep DashboardTabs mounted when the Hub clock or a
+// background refresh rerenders an open report, preserving its reading controls.
+const documentComponents = createReportComponents(false);
+const dashboardComponents = createReportComponents(true);
+
+export default function ReportContent({ body, originalUrl, presentation = "document" }: { body: string; originalUrl?: string; presentation?: "document" | "dashboard" }) {
+  if (!body) return <p className="report-empty">No original report text is available for this saved update.</p>;
+  const dashboard = presentation === "dashboard";
+  return <div className={`report-content${dashboard ? " dashboard-report" : ""}`}><ReactMarkdown remarkPlugins={[remarkReportGfm]} rehypePlugins={dashboard ? [rehypeRaw, rememberDashboardStructure, revealOriginalReport, [rehypeSanitize, reportSchema], groupDashboardSections] : [rehypeRaw, revealOriginalReport, [rehypeSanitize, reportSchema]]} urlTransform={url => safeHref(url) || ""} components={dashboard ? dashboardComponents : documentComponents}>{dashboard ? dashboardMarkdown(body, originalUrl) : reportMarkdown(body, originalUrl)}</ReactMarkdown></div>;
 }

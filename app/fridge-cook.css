@@ -16,6 +16,7 @@
   border-radius: 21px;
   color: var(--fridge-ink);
   max-width: 920px;
+  max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
   box-shadow: 0 28px 100px #061d2466;
 }
@@ -317,7 +318,7 @@
 .fridge-modal .notice.success { color: #6a8b5c; background: #ebf5df; border-color: #d1e3bd; }
 @media (max-width:700px) {
   .fridge-backdrop { padding: 14px; }
-  .fridge-modal.modal { border-radius: 16px; max-height: calc(100dvh - 28px); }
+  .fridge-modal.modal { border-radius: 16px; max-height: calc(100vh - 28px); max-height: calc(100dvh - 28px); }
   .fridge-modal .modal-header { padding: 19px 21px; gap: 12px; }
   .fridge-modal .modal-header h2 { font-size: 21px; line-height: 1.5; }
   .fridge-modal .modal-body { padding: 21px; }
@@ -365,7 +366,7 @@
 }
 @media (max-width:420px) {
   .fridge-backdrop { padding: 9px; }
-  .fridge-modal.modal { max-height: calc(100dvh - 18px); border-radius: 14px; }
+  .fridge-modal.modal { max-height: calc(100vh - 18px); max-height: calc(100dvh - 18px); border-radius: 14px; }
   .fridge-modal .modal-header { padding: 17px 16px; }
   .fridge-modal .modal-header h2 { font-size: 19px; }
   .fridge-modal .modal-body { padding: 17px 16px; }

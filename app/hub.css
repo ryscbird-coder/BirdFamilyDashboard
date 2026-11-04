@@ -776,3 +776,21 @@ body { background: var(--bg); }
 .overview-bottom>.briefing-card.bella .briefing-header { flex-wrap:wrap; gap:10px; }
 .overview-bottom>.briefing-card.bella .briefing-header>div { flex:1; min-width:120px; }
 .overview-bottom>.briefing-card.bella .briefing-title { font-size:19px; }
+
+/* Embedded wall browsers may not support dvh. Keep the dialog bounded and its
+   header reachable while only the body scrolls, including on short screens. */
+.modal {
+  max-height:calc(100vh - 50px);
+  max-height:calc(100dvh - 50px);
+}
+.modal-body {
+  flex:1 1 auto;
+  min-height:0;
+  -webkit-overflow-scrolling:touch;
+}
+@media(max-width:700px) {
+  .modal {
+    max-height:calc(100vh - 24px);
+    max-height:calc(100dvh - 24px);
+  }
+}
